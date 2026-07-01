@@ -4,6 +4,10 @@ import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'rea
 import { ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getSchemaForForm, NUMERIC_KEYS, PRIMITIVE_ARRAY_KEYS } from './schemas';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableArrayItem } from './components/SortableArrayItem';
+import { toast } from 'sonner';
 
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(({ className, ...props }, ref) => (
   <input className={["flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50", className].filter(Boolean).join(" ")} ref={ref} {...props} />
@@ -78,9 +82,22 @@ export default function DynamicForm({ filename, isItem, data, meta, onSave, onDi
     resolver: schema ? zodResolver(schema as any) : undefined,
   });
 
+  const [isTextMode, setIsTextMode] = React.useState(false);
+  const [textValue, setTextValue] = React.useState("");
+
+  const prevDataRef = React.useRef(data);
   useEffect(() => {
-    reset(data);
-  }, [data, reset]);
+    if (data !== prevDataRef.current) {
+      if (isTextMode) {
+        // 在純文字模式下，若發生外部更新 (例如存檔)，只更新 RHF 的基準值，不干擾目前表單內容
+        reset(data, { keepValues: true });
+      } else {
+        // 一般表單模式下的正常重置
+        reset(data);
+      }
+      prevDataRef.current = data;
+    }
+  }, [data, reset, isTextMode]);
 
   useEffect(() => {
     if (onDirtyChange) onDirtyChange(isDirty);
@@ -102,30 +119,102 @@ export default function DynamicForm({ filename, isItem, data, meta, onSave, onDi
     }
   };
 
+  const handleSaveTextMode = () => {
+    try {
+      const parsed = JSON.parse(textValue);
+      if (schema) {
+        const result = schema.safeParse(parsed);
+        if (!result.success) {
+          if (!window.confirm("JSON 格式符合，但有內容驗證錯誤。確定要強制儲存嗎？")) {
+             return;
+          }
+        }
+      }
+      onSave(parsed);
+    } catch (e) {
+      toast.error("JSON 格式錯誤，無法儲存");
+    }
+  };
+
+  const toggleTextMode = () => {
+    if (!isTextMode) {
+      const currentData = getValues();
+      const sanitized = sanitizeData(currentData, data, undefined, meta);
+      setTextValue(JSON.stringify(sanitized, null, 2));
+      setIsTextMode(true);
+    } else {
+      try {
+        const parsed = JSON.parse(textValue);
+        reset(parsed, { keepDefaultValues: true });
+        setIsTextMode(false);
+      } catch (e) {
+        toast.error("JSON 格式錯誤，無法切換回表單模式");
+      }
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit(onValid, onInvalid)} className="space-y-6">
-      <div className="space-y-4">
-        {Object.keys(data).map((key) => (
-          <RecursiveField
-            key={key}
-            name={key}
-            value={data[key]}
-            meta={meta}
-            register={register}
-            control={control}
-            setValue={setValue}
-            path={key}
-            parentData={data}
-            errors={errors}
-          />
-        ))}
-      </div>
-      <div className="sticky bottom-4 z-10">
-        <Button type="submit" className="w-full shadow-lg">
-          儲存修改
+    <div className="space-y-6">
+      <div className="flex justify-end">
+        <Button type="button" onClick={toggleTextMode} className="bg-secondary text-secondary-foreground hover:bg-secondary/80 shadow-sm border">
+          {isTextMode ? "切換為表單模式" : "切換為純文字模式"}
         </Button>
       </div>
-    </form>
+      {isTextMode ? (
+        <div className="space-y-4">
+          <textarea
+            className="w-full h-[60vh] font-mono text-sm p-4 border rounded-md bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={textValue}
+            onChange={(e) => {
+              setTextValue(e.target.value);
+              if (onDirtyChange) onDirtyChange(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = e.currentTarget.selectionStart;
+                const end = e.currentTarget.selectionEnd;
+                setTextValue(textValue.substring(0, start) + "  " + textValue.substring(end));
+                setTimeout(() => {
+                  if (e.currentTarget) {
+                    e.currentTarget.selectionStart = e.currentTarget.selectionEnd = start + 2;
+                  }
+                }, 0);
+              }
+            }}
+          />
+          <div className="sticky bottom-4 z-10">
+            <Button type="button" className="w-full shadow-lg" onClick={handleSaveTextMode}>
+              儲存文字修改
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit(onValid, onInvalid)} className="space-y-6">
+          <div className="space-y-4">
+            {Object.keys(data).map((key) => (
+              <RecursiveField
+                key={key}
+                name={key}
+                value={data[key]}
+                meta={meta}
+                register={register}
+                control={control}
+                setValue={setValue}
+                path={key}
+                parentData={data}
+                errors={errors}
+              />
+            ))}
+          </div>
+          <div className="sticky bottom-4 z-10">
+            <Button type="submit" className="w-full shadow-lg">
+              儲存修改
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -327,10 +416,114 @@ function ArrayField(props: RecursiveFieldProps) {
   }
 
   // Object Array with useFieldArray
-  const { fields, append, remove, move } = useFieldArray({
+  const { fields, append, remove, move, replace } = useFieldArray({
     control,
     name: path
   });
+
+  const isEventSequence = name === 'event_sequence';
+  const currentArrayData = useWatch({ control, name: path }) || [];
+
+  const syntheticItems = React.useMemo(() => {
+    if (!isEventSequence) return fields.map((f, i) => ({ id: f.id, type: 'item', realIndex: i }));
+    
+    const items: any[] = [];
+    let currentYear: number | undefined = undefined;
+    let currentSem: number | undefined = undefined;
+    
+    fields.forEach((field: any, index) => {
+      const data = currentArrayData[index] || {};
+      const y = data.year ?? currentYear;
+      const s = data.semester ?? currentSem;
+      
+      if (y !== currentYear || s !== currentSem) {
+        if (y !== undefined && s !== undefined) {
+          items.push({
+            id: `boundary-${y}-${s}-${index}`,
+            type: 'boundary',
+            year: y,
+            semester: s,
+            isBoundary: true,
+          });
+          currentYear = y;
+          currentSem = s;
+        }
+      }
+      items.push({
+        id: field.id,
+        type: 'item',
+        realIndex: index,
+      });
+    });
+    return items;
+  }, [fields, currentArrayData, isEventSequence]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = syntheticItems.findIndex((i) => i.id === active.id);
+    const newIndex = syntheticItems.findIndex((i) => i.id === over.id);
+    
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newSynthetic = arrayMove(syntheticItems, oldIndex, newIndex);
+    
+    if (!isEventSequence) {
+      const fromReal = syntheticItems[oldIndex].realIndex;
+      const toReal = syntheticItems[newIndex].realIndex;
+      if (fromReal !== undefined && toReal !== undefined) {
+        move(fromReal, toReal);
+      }
+      return;
+    }
+
+    let curYear: number | undefined = undefined;
+    let curSem: number | undefined = undefined;
+    
+    const newFields: any[] = [];
+    
+    newSynthetic.forEach(item => {
+      if (item.type === 'boundary') {
+        curYear = item.year;
+        curSem = item.semester;
+      } else {
+        const realIdx = item.realIndex!;
+        const originalField = fields[realIdx] as any;
+        const currentData = currentArrayData[realIdx];
+        
+        let targetYear = curYear;
+        let targetSem = curSem;
+        
+        if (targetYear === undefined || targetSem === undefined) {
+           targetYear = currentData.year ?? originalField.year;
+           targetSem = currentData.semester ?? originalField.semester;
+           curYear = targetYear;
+           curSem = targetSem;
+        }
+        
+        newFields.push({
+          ...originalField,
+          ...currentData,
+          year: targetYear,
+          semester: targetSem,
+        });
+      }
+    });
+
+    newFields.forEach((f, idx) => {
+      if (f.index !== undefined) {
+        f.index = idx;
+      }
+    });
+
+    replace(newFields);
+  };
 
   return (
     <div className="p-4 border rounded-md space-y-4">
@@ -339,20 +532,32 @@ function ArrayField(props: RecursiveFieldProps) {
         <span className="text-sm text-muted-foreground flex items-center">共 {fields.length} 項</span>
       </h4>
       <div className="space-y-2">
-        {fields.map((field, index) => (
-          <CollapsibleArrayItem
-            key={field.id}
-            index={index}
-            field={field}
-            value={value}
-            path={path}
-            remove={remove}
-            move={move}
-            totalLength={fields.length}
-            props={props}
-            control={control}
-          />
-        ))}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={syntheticItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
+            {syntheticItems.map((item) => (
+              <SortableArrayItem key={item.id} id={item.id} isBoundary={item.isBoundary}>
+                {item.type === 'boundary' ? (
+                  <div className="py-2 px-4 bg-primary/10 text-primary border-l-4 border-primary rounded-r-md font-bold text-sm my-2">
+                    📍 {item.year} 學年度 第 {item.semester} 學期
+                  </div>
+                ) : (
+                  <CollapsibleArrayItem
+                    index={item.realIndex!}
+                    field={fields[item.realIndex!]}
+                    value={value}
+                    path={path}
+                    remove={remove}
+                    move={move}
+                    totalLength={fields.length}
+                    props={props}
+                    control={control}
+                    hideArrows={isEventSequence}
+                  />
+                )}
+              </SortableArrayItem>
+            ))}
+          </SortableContext>
+        </DndContext>
       </div>
       <Button 
         type="button" 
@@ -369,11 +574,11 @@ function ArrayField(props: RecursiveFieldProps) {
   );
 }
 
-function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLength, props, control }: any) {
+function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLength, props, control, hideArrows }: any) {
   const [isOpen, setIsOpen] = React.useState(false);
-  const [label, rank] = useWatch({ 
+  const [label, rank, status, question] = useWatch({ 
     control, 
-    name: [`${path}.${index}.label`, `${path}.${index}.rank`] 
+    name: [`${path}.${index}.label`, `${path}.${index}.rank`, `${path}.${index}.status`, `${path}.${index}.question`] 
   });
   
   // Header Preview Logic
@@ -382,6 +587,11 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
     previewTitle = `選項: ${label}`;
   } else if (rank !== undefined && rank !== null && rank !== "") {
     previewTitle = `名次: ${rank}`;
+  } else if (question !== undefined && question !== null && question !== "") {
+    previewTitle = question;
+    if (status) {
+      previewTitle = `[${status}] ${previewTitle}`;
+    }
   }
 
   return (
@@ -390,24 +600,28 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
          className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
          onClick={() => setIsOpen(!isOpen)}
        >
-         <h5 className="font-medium text-sm text-card-foreground">{previewTitle}</h5>
-         <div className="flex items-center gap-1">
-            <Button
-               type="button"
-               className="h-8 w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
-               onClick={(e) => { e.stopPropagation(); if (index > 0) move(index, index - 1); }}
-               disabled={index === 0}
-            >
-              <ArrowUp className="h-4 w-4" />
-            </Button>
-            <Button
-               type="button"
-               className="h-8 w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
-               onClick={(e) => { e.stopPropagation(); if (index < totalLength - 1) move(index, index + 1); }}
-               disabled={index === totalLength - 1}
-            >
-              <ArrowDown className="h-4 w-4" />
-            </Button>
+         <h5 className="font-medium text-sm text-card-foreground line-clamp-1 flex-1 pr-2">{previewTitle}</h5>
+         <div className="flex items-center gap-1 shrink-0">
+            {!hideArrows && (
+              <>
+                <Button
+                   type="button"
+                   className="h-8 w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                   onClick={(e) => { e.stopPropagation(); if (index > 0) move(index, index - 1); }}
+                   disabled={index === 0}
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+                <Button
+                   type="button"
+                   className="h-8 w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                   onClick={(e) => { e.stopPropagation(); if (index < totalLength - 1) move(index, index + 1); }}
+                   disabled={index === totalLength - 1}
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+              </>
+            )}
             <Button 
               type="button" 
               className="h-6 px-2 text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-2"

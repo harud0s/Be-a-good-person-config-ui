@@ -33,10 +33,13 @@ export default function App() {
   const meta = activeFileContent?._meta;
   
   const mainArrayKey = React.useMemo(() => {
+    if (activeFile?.name === 'event_sequence.json' || activeFile?.name === 'pending_decisions.json') {
+      return null;
+    }
     return activeFileContent 
       ? Object.keys(activeFileContent).find(key => key !== '_meta' && Array.isArray(activeFileContent[key])) 
       : null;
-  }, [activeFileContent]);
+  }, [activeFileContent, activeFile?.name]);
 
   const handleSaveRoot = async (data: any) => {
     try {
@@ -299,6 +302,7 @@ export default function App() {
                 // 全域表單模式 (如 game_config.json)
                 <div className="max-w-2xl">
                   <DynamicForm 
+                    key={activeFile.name}
                     filename={activeFile.name}
                     isItem={false}
                     data={activeFileContent} 
@@ -333,6 +337,7 @@ export default function App() {
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <DynamicForm 
+                key={`${activeFile?.name}-${editingItemIndex}`}
                 filename={activeFile?.name}
                 isItem={true}
                 data={activeFileContent[mainArrayKey][editingItemIndex]} 
