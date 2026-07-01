@@ -100,8 +100,10 @@ export default function DynamicForm({ filename, isItem, data, meta, onSave, onDi
   }, [data, reset, isTextMode]);
 
   useEffect(() => {
-    if (onDirtyChange) onDirtyChange(isDirty);
-  }, [isDirty, onDirtyChange]);
+    if (!isTextMode && onDirtyChange) {
+      onDirtyChange(isDirty);
+    }
+  }, [isDirty, isTextMode, onDirtyChange]);
 
   const onValid = (formData: any) => {
     // If Zod passes, formData is already transformed (e.g. string to number). 
