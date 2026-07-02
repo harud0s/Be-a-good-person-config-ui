@@ -510,8 +510,10 @@ function ArrayField(props: RecursiveFieldProps) {
            curSem = targetSem;
         }
         
+        const { id, ...restOriginal } = originalField;
+
         newFields.push({
-          ...originalField,
+          ...restOriginal,
           ...currentData,
           year: targetYear,
           semester: targetSem,
