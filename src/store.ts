@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import { get as getIDB, set as setIDB } from 'idb-keyval';
 import JSZip from 'jszip';
 
+const WORKER_URL = import.meta.env.VITE_WORKER_URL || 'http://localhost:8787';
+
 export interface FileEntry {
   name: string;
   path: string;
@@ -10,6 +12,7 @@ export interface FileEntry {
   metaDescription?: string;
   contentString?: string;
   originalContent?: string;
+  sha?: string;
 }
 
 interface EditorState {
@@ -18,7 +21,9 @@ interface EditorState {
   activeFile: FileEntry | null;
   activeFileContent: any | null;
   isDirty: boolean;
-  isZipMode: boolean;
+  workspaceMode: 'local' | 'zip' | 'github';
+  githubRepo?: string;
+  githubPassword?: string;
   requiresPermission?: boolean;
   drafts: Record<string, any>;
   originalContents: Record<string, string>;
@@ -28,12 +33,17 @@ interface EditorState {
   openDirectory: () => Promise<void>;
   importZip: (file: File) => Promise<void>;
   exportZip: () => Promise<void>;
+  openGitHubMode: (repo: string, password: string) => Promise<void>;
+  commitToGitHub: (message: string, authorName: string) => Promise<any>;
+  getGitHubHistory: (path: string) => Promise<any>;
+
   openFile: (fileEntry: FileEntry) => Promise<void>;
   saveFile: (content: any, targetFile?: FileEntry) => Promise<void>;
   saveAllDrafts: () => Promise<void>;
   clearDraft: (path: string) => void;
   updateActiveContent: (content: any, isDirty?: boolean) => void;
   setDirty: (isDirty: boolean) => void;
+  checkUnsavedChanges: () => boolean;
 }
 
 async function loadFilesFromDirectory(dirHandle: FileSystemDirectoryHandle, path: string = ''): Promise<FileEntry[]> {
@@ -79,7 +89,7 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   activeFile: null,
   activeFileContent: null,
   isDirty: false,
-  isZipMode: false,
+  workspaceMode: 'local',
   drafts: {},
   originalContents: {},
 
@@ -103,7 +113,7 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
             activeFile: null, 
             activeFileContent: null, 
             isDirty: false,
-            isZipMode: false,
+            workspaceMode: 'local',
             requiresPermission: false,
             drafts: {},
             originalContents: newOriginalContents
@@ -149,6 +159,11 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
     }
   },
 
+  checkUnsavedChanges: () => {
+    const { drafts } = getStore();
+    return Object.keys(drafts).length > 0;
+  },
+
   openDirectory: async () => {
     try {
       const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
@@ -169,9 +184,11 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         activeFile: null, 
         activeFileContent: null, 
         isDirty: false,
-        isZipMode: false,
+        workspaceMode: 'local',
         drafts: {},
-        originalContents: newOriginalContents
+        originalContents: newOriginalContents,
+        githubRepo: undefined,
+        githubPassword: undefined
       });
     } catch (error) {
       console.error('Failed to open directory:', error);
@@ -196,7 +213,6 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
             console.warn(`Failed to parse _meta from ${relativePath}`);
           }
 
-          // extract just filename from path
           const name = relativePath.split('/').pop() || relativePath;
 
           loadedFiles.push({
@@ -224,9 +240,11 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         activeFile: null,
         activeFileContent: null,
         isDirty: false,
-        isZipMode: true,
+        workspaceMode: 'zip',
         drafts: {},
-        originalContents: newOriginalContents
+        originalContents: newOriginalContents,
+        githubRepo: undefined,
+        githubPassword: undefined
       });
     } catch (error) {
       console.error('Failed to import zip:', error);
@@ -235,8 +253,8 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   },
 
   exportZip: async () => {
-    const { files, isZipMode } = getStore();
-    if (!isZipMode || files.length === 0) throw new Error("No files to export in ZIP mode");
+    const { files, workspaceMode } = getStore();
+    if (workspaceMode !== 'zip' && files.length === 0) throw new Error("No files to export in ZIP mode");
 
     const zip = new JSZip();
     for (const file of files) {
@@ -254,6 +272,127 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  },
+
+  openGitHubMode: async (repo: string, password: string) => {
+    try {
+      const res = await fetch(`${WORKER_URL}/files?repo=${encodeURIComponent(repo)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to fetch from GitHub Proxy: ${text}`);
+      }
+      
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const loadedFiles: FileEntry[] = data.files.map((f: any) => ({
+        name: f.name,
+        path: f.path,
+        sha: f.sha,
+        metaDescription: f.metaDescription,
+        contentString: f.originalContent,
+        originalContent: f.originalContent
+      }));
+
+      loadedFiles.sort((a, b) => a.path.localeCompare(b.path));
+      
+      const newOriginalContents: Record<string, string> = {};
+      loadedFiles.forEach(f => {
+        if (f.originalContent) {
+          newOriginalContents[f.path] = f.originalContent;
+          delete f.originalContent;
+        }
+      });
+
+      set({
+        directoryHandle: null,
+        files: loadedFiles,
+        activeFile: null,
+        activeFileContent: null,
+        isDirty: false,
+        workspaceMode: 'github',
+        githubRepo: repo,
+        githubPassword: password,
+        drafts: {},
+        originalContents: newOriginalContents
+      });
+      
+      if (data.errors && data.errors.length > 0) {
+        console.warn('Some files failed to load:', data.errors);
+      }
+    } catch (error) {
+      console.error('Failed to open GitHub mode:', error);
+      throw error;
+    }
+  },
+
+  commitToGitHub: async (message: string, authorName: string) => {
+    const { githubRepo, githubPassword, files, originalContents } = getStore();
+    if (!githubRepo || !githubPassword) throw new Error('Not in GitHub mode or missing credentials');
+
+    const changes = files
+      .filter(f => f.contentString !== undefined && f.contentString !== originalContents[f.path])
+      .map(f => ({
+        fileName: f.path,
+        content: f.contentString
+      }));
+
+    if (changes.length === 0) {
+      throw new Error('No changes to commit');
+    }
+
+    const res = await fetch(`${WORKER_URL}/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        repo: githubRepo,
+        password: githubPassword,
+        changes,
+        commitMessage: message,
+        authorName
+      })
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(errData.error || 'Failed to commit');
+    }
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    // Update the local SHAs and originalContents
+    const updatedFilesData: { fileName: string; sha: string }[] = data.updatedFiles;
+    
+    // Create new maps for state updates
+    const newOriginalContents = { ...originalContents };
+    const newFiles = [...files];
+
+    updatedFilesData.forEach(update => {
+      const idx = newFiles.findIndex(f => f.path === update.fileName);
+      if (idx !== -1) {
+        newFiles[idx] = { ...newFiles[idx], sha: update.sha };
+        if (newFiles[idx].contentString) {
+           newOriginalContents[update.fileName] = newFiles[idx].contentString as string;
+        }
+      }
+    });
+
+    set({ files: newFiles, originalContents: newOriginalContents });
+    return data;
+  },
+
+  getGitHubHistory: async (path: string) => {
+    const { githubRepo } = getStore();
+    if (!githubRepo) throw new Error('Not in GitHub mode');
+
+    const res = await fetch(`${WORKER_URL}/history?repo=${encodeURIComponent(githubRepo)}&path=${encodeURIComponent(path)}`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch history');
+    }
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
   },
 
   openFile: async (fileEntry: FileEntry) => {
@@ -275,6 +414,8 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         text = await file.text();
       } else if (fileEntry.contentString) {
         text = fileEntry.contentString;
+      } else if (state.originalContents[fileEntry.path]) {
+        text = state.originalContents[fileEntry.path];
       } else {
         throw new Error("File has no handle and no content");
       }
@@ -309,15 +450,15 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   setDirty: (isDirty: boolean) => set({ isDirty }),
 
   saveFile: async (content: any, targetFile?: FileEntry) => {
-    const { activeFile, files, isZipMode, drafts, originalContents } = getStore();
+    const { activeFile, files, workspaceMode, drafts, originalContents } = getStore();
     const fileToSave = targetFile || activeFile;
     if (!fileToSave) throw new Error("No file to save");
 
     try {
       const contentString = JSON.stringify(content, null, 2);
 
-      if (isZipMode) {
-        // Update the files array in memory
+      if (workspaceMode === 'zip' || workspaceMode === 'github') {
+        // Update the files array in memory with contentString
         const updatedFiles = files.map(f => 
           f.path === fileToSave.path ? { ...f, contentString } : f
         );
@@ -326,9 +467,15 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         
         const updates: Partial<EditorState> = {
           files: updatedFiles,
-          drafts: newDrafts,
-          originalContents: { ...originalContents, [fileToSave.path]: contentString }
+          drafts: newDrafts
         };
+
+        // For zip mode, we implicitly consider it fully saved so we update originalContents.
+        // For github mode, originalContents tracks the remote state, so we don't update it until commit!
+        if (workspaceMode === 'zip') {
+          updates.originalContents = { ...originalContents, [fileToSave.path]: contentString };
+        }
+
         if (fileToSave.path === activeFile?.path) {
           updates.activeFileContent = content;
           updates.isDirty = false;
@@ -371,15 +518,21 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   },
 
   clearDraft: (path: string) => {
-    const { drafts, activeFile, originalContents } = getStore();
+    const { drafts, activeFile, originalContents, files } = getStore();
     const newDrafts = { ...drafts };
     delete newDrafts[path];
     
     const updates: Partial<EditorState> = { drafts: newDrafts };
     if (activeFile && activeFile.path === path) {
        updates.isDirty = false;
-       if (originalContents[path]) {
-          updates.activeFileContent = JSON.parse(originalContents[path]);
+       
+       // Fallback to in-memory file contentString if it exists (for zip/github "staged" changes),
+       // else fallback to originalContents
+       const fileEntry = files.find(f => f.path === path);
+       let textToRestore = fileEntry?.contentString || originalContents[path];
+       
+       if (textToRestore) {
+          updates.activeFileContent = JSON.parse(textToRestore);
        }
     }
     set(updates);
