@@ -9,6 +9,7 @@ export interface FileEntry {
   handle?: FileSystemFileHandle;
   metaDescription?: string;
   contentString?: string;
+  originalContent?: string;
 }
 
 interface EditorState {
@@ -19,6 +20,8 @@ interface EditorState {
   isDirty: boolean;
   isZipMode: boolean;
   requiresPermission?: boolean;
+  drafts: Record<string, any>;
+  originalContents: Record<string, string>;
 
   initStore: () => Promise<void>;
   restoreSession: () => Promise<void>;
@@ -26,8 +29,11 @@ interface EditorState {
   importZip: (file: File) => Promise<void>;
   exportZip: () => Promise<void>;
   openFile: (fileEntry: FileEntry) => Promise<void>;
-  saveFile: (content: any) => Promise<void>;
+  saveFile: (content: any, targetFile?: FileEntry) => Promise<void>;
+  saveAllDrafts: () => Promise<void>;
+  clearDraft: (path: string) => void;
   updateActiveContent: (content: any, isDirty?: boolean) => void;
+  setDirty: (isDirty: boolean) => void;
 }
 
 async function loadFilesFromDirectory(dirHandle: FileSystemDirectoryHandle, path: string = ''): Promise<FileEntry[]> {
@@ -53,6 +59,7 @@ async function loadFilesFromDirectory(dirHandle: FileSystemDirectoryHandle, path
           path: path + entry.name,
           handle: fileHandle,
           metaDescription,
+          originalContent: text
         };
       })());
     } else if (entry.kind === 'directory') {
@@ -73,6 +80,8 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   activeFileContent: null,
   isDirty: false,
   isZipMode: false,
+  drafts: {},
+  originalContents: {},
 
   initStore: async () => {
     try {
@@ -81,6 +90,13 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         const permission = await dirHandle.queryPermission({ mode: 'readwrite' });
         if (permission === 'granted') {
           const loadedFiles = await loadFilesFromDirectory(dirHandle);
+          const newOriginalContents: Record<string, string> = {};
+          loadedFiles.forEach(f => {
+            if (f.originalContent) {
+              newOriginalContents[f.path] = f.originalContent;
+              delete f.originalContent;
+            }
+          });
           set({ 
             directoryHandle: dirHandle, 
             files: loadedFiles, 
@@ -88,7 +104,9 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
             activeFileContent: null, 
             isDirty: false,
             isZipMode: false,
-            requiresPermission: false
+            requiresPermission: false,
+            drafts: {},
+            originalContents: newOriginalContents
           });
         } else {
           set({
@@ -108,8 +126,20 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
     try {
       const permission = await dirHandle.requestPermission({ mode: 'readwrite' });
       if (permission === 'granted') {
-        const files = await loadFilesFromDirectory(dirHandle);
-        set({ files, requiresPermission: false });
+        const loadedFiles = await loadFilesFromDirectory(dirHandle);
+        const newOriginalContents: Record<string, string> = {};
+        loadedFiles.forEach(f => {
+          if (f.originalContent) {
+            newOriginalContents[f.path] = f.originalContent;
+            delete f.originalContent;
+          }
+        });
+        set({ 
+          files: loadedFiles, 
+          requiresPermission: false, 
+          originalContents: newOriginalContents, 
+          drafts: {} 
+        });
       } else {
         throw new DOMException('User denied permission', 'AbortError');
       }
@@ -125,6 +155,13 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
       await setIDB('directoryHandle', dirHandle);
 
       const loadedFiles = await loadFilesFromDirectory(dirHandle);
+      const newOriginalContents: Record<string, string> = {};
+      loadedFiles.forEach(f => {
+        if (f.originalContent) {
+          newOriginalContents[f.path] = f.originalContent;
+          delete f.originalContent;
+        }
+      });
 
       set({ 
         directoryHandle: dirHandle, 
@@ -132,7 +169,9 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         activeFile: null, 
         activeFileContent: null, 
         isDirty: false,
-        isZipMode: false
+        isZipMode: false,
+        drafts: {},
+        originalContents: newOriginalContents
       });
     } catch (error) {
       console.error('Failed to open directory:', error);
@@ -164,12 +203,20 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
             name,
             path: relativePath,
             metaDescription,
-            contentString: text
+            contentString: text,
+            originalContent: text
           });
         }
       }
 
       loadedFiles.sort((a, b) => a.path.localeCompare(b.path));
+      const newOriginalContents: Record<string, string> = {};
+      loadedFiles.forEach(f => {
+        if (f.originalContent) {
+          newOriginalContents[f.path] = f.originalContent;
+          delete f.originalContent;
+        }
+      });
 
       set({
         directoryHandle: null,
@@ -177,7 +224,9 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         activeFile: null,
         activeFileContent: null,
         isDirty: false,
-        isZipMode: true
+        isZipMode: true,
+        drafts: {},
+        originalContents: newOriginalContents
       });
     } catch (error) {
       console.error('Failed to import zip:', error);
@@ -209,6 +258,17 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
 
   openFile: async (fileEntry: FileEntry) => {
     try {
+      const state = getStore();
+      
+      if (state.drafts[fileEntry.path]) {
+        set({ 
+          activeFile: fileEntry, 
+          activeFileContent: state.drafts[fileEntry.path], 
+          isDirty: true 
+        });
+        return;
+      }
+
       let text = '';
       if (fileEntry.handle) {
         const file = await fileEntry.handle.getFile();
@@ -224,7 +284,8 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
       set({ 
         activeFile: fileEntry, 
         activeFileContent: json, 
-        isDirty: false 
+        isDirty: false,
+        originalContents: { ...state.originalContents, [fileEntry.path]: text }
       });
     } catch (error) {
       console.error(`Failed to read file ${fileEntry.name}:`, error);
@@ -233,12 +294,24 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   },
 
   updateActiveContent: (content: any, isDirty: boolean = true) => {
-    set({ activeFileContent: content, isDirty });
+    const { activeFile, drafts } = getStore();
+    if (activeFile) {
+      set({ 
+        activeFileContent: content, 
+        isDirty,
+        drafts: { ...drafts, [activeFile.path]: content }
+      });
+    } else {
+      set({ activeFileContent: content, isDirty });
+    }
   },
 
-  saveFile: async (content: any) => {
-    const { activeFile, files, isZipMode } = getStore();
-    if (!activeFile) throw new Error("No active file");
+  setDirty: (isDirty: boolean) => set({ isDirty }),
+
+  saveFile: async (content: any, targetFile?: FileEntry) => {
+    const { activeFile, files, isZipMode, drafts, originalContents } = getStore();
+    const fileToSave = targetFile || activeFile;
+    if (!fileToSave) throw new Error("No file to save");
 
     try {
       const contentString = JSON.stringify(content, null, 2);
@@ -246,24 +319,69 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
       if (isZipMode) {
         // Update the files array in memory
         const updatedFiles = files.map(f => 
-          f.path === activeFile.path ? { ...f, contentString } : f
+          f.path === fileToSave.path ? { ...f, contentString } : f
         );
-        set({
+        const newDrafts = { ...drafts };
+        delete newDrafts[fileToSave.path];
+        
+        const updates: Partial<EditorState> = {
           files: updatedFiles,
-          activeFileContent: content,
-          isDirty: false
-        });
-      } else if (activeFile.handle) {
-        const writable = await activeFile.handle.createWritable();
+          drafts: newDrafts,
+          originalContents: { ...originalContents, [fileToSave.path]: contentString }
+        };
+        if (fileToSave.path === activeFile?.path) {
+          updates.activeFileContent = content;
+          updates.isDirty = false;
+        }
+        set(updates);
+      } else if (fileToSave.handle) {
+        const writable = await fileToSave.handle.createWritable();
         await writable.write(contentString);
         await writable.close();
-        set({ activeFileContent: content, isDirty: false });
+        
+        const newDrafts = { ...drafts };
+        delete newDrafts[fileToSave.path];
+        
+        const updates: Partial<EditorState> = {
+          drafts: newDrafts,
+          originalContents: { ...originalContents, [fileToSave.path]: contentString }
+        };
+        if (fileToSave.path === activeFile?.path) {
+          updates.activeFileContent = content;
+          updates.isDirty = false;
+        }
+        set(updates);
       } else {
          throw new Error("No handle available for saving");
       }
     } catch (error) {
-      console.error(`Failed to save file ${activeFile.name}:`, error);
+      console.error(`Failed to save file ${fileToSave.name}:`, error);
       throw error;
     }
+  },
+
+  saveAllDrafts: async () => {
+    const { drafts, files, saveFile } = getStore();
+    for (const [path, content] of Object.entries(drafts)) {
+      const fileEntry = files.find(f => f.path === path);
+      if (fileEntry) {
+        await saveFile(content, fileEntry);
+      }
+    }
+  },
+
+  clearDraft: (path: string) => {
+    const { drafts, activeFile, originalContents } = getStore();
+    const newDrafts = { ...drafts };
+    delete newDrafts[path];
+    
+    const updates: Partial<EditorState> = { drafts: newDrafts };
+    if (activeFile && activeFile.path === path) {
+       updates.isDirty = false;
+       if (originalContents[path]) {
+          updates.activeFileContent = JSON.parse(originalContents[path]);
+       }
+    }
+    set(updates);
   },
 }));

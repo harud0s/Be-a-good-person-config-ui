@@ -3,7 +3,7 @@ import { useForm, useWatch, useFieldArray } from 'react-hook-form';
 import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form';
 import { ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { getSchemaForForm, NUMERIC_KEYS, PRIMITIVE_ARRAY_KEYS } from './schemas';
+import { getSchemaForForm, NUMERIC_KEYS, PRIMITIVE_ARRAY_KEYS, baseMetaSchema } from './schemas';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableArrayItem } from './components/SortableArrayItem';
@@ -24,8 +24,9 @@ const Label = React.forwardRef<HTMLLabelElement, React.LabelHTMLAttributes<HTMLL
 interface DynamicFormProps {
   filename?: string;
   isItem?: boolean;
+  isMeta?: boolean;
   data: any;
-  meta: any;
+  meta?: any;
   onSave: (data: any) => void;
   onDirtyChange?: (isDirty: boolean) => void;
 }
@@ -73,8 +74,8 @@ const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: 
   return currentData;
 }
 
-export default function DynamicForm({ filename, isItem, data, meta, onSave, onDirtyChange }: DynamicFormProps) {
-  const schema = filename ? getSchemaForForm(filename, !!isItem) : undefined;
+export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSave, onDirtyChange }: DynamicFormProps) {
+  const schema = isMeta ? baseMetaSchema : (filename ? getSchemaForForm(filename, !!isItem) : undefined);
   
   const { register, handleSubmit, control, reset, setValue, getValues, formState: { isDirty, errors } } = useForm({
     defaultValues: data,
@@ -423,7 +424,7 @@ function ArrayField(props: RecursiveFieldProps) {
     name: path
   });
 
-  const isEventSequence = name === 'event_sequence';
+  const isEventSequence = name === 'sequence';
   const currentArrayData = useWatch({ control, name: path }) || [];
 
   const syntheticItems = React.useMemo(() => {
