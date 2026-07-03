@@ -1,0 +1,28 @@
+- `[x]` **Phase 1: Project Scaffolding & Setup**
+  - `[x]` Vite + React + TS setup
+  - `[x]` Tailwind + Shadcn UI config
+  - `[x]` Basic layouts
+- `[x]` **Phase 2: Local File System Access (Desktop Mode)**
+  - `[x]` File System Access API integration
+  - `[x]` Zustand store (openDirectory, files, activeFile)
+  - `[x]` Sidebar listing files
+- `[x]` **Phase 3: Dynamic JSON Form Editor**
+  - `[x]` React Hook Form + Zod schema generator
+  - `[x]` Nested objects and arrays handling
+  - `[x]` Auto-save to draft state
+  - `[x]` Handle meta objects editing
+- `[x]` **Phase 4: Diff Viewer & Conflict Resolution**
+  - `[x]` Diff viewer UI (Lucide React + standard text diffs)
+  - `[x]` Discard/Revert changes function
+  - `[x]` Export ZIP (Mobile support)
+- `[x]` **Phase 5: ZIP Workflow (Mobile Mode)**
+  - `[x]` JSZip integration for reading/writing config
+  - `[x]` Workspace state switching logic (Local vs Zip)
+- `[x]` **Phase 6: GitHub Integration (Proxy + UI)**
+  - `[x]` **Part 1**: Cloudflare Worker setup
+  - `[x]` **Part 2**: UI integration (Login, Commit Dialog, History Drawer)
+- `[x]` **Phase 7: PWA Packaging & Final Polish**
+  - `[x]` vite-plugin-pwa config (manifest.json, icons)
+  - `[x]` Offline caching and service worker prompt (`PWABadge.tsx`)
+  - `[x]` Strict QA issue resolving and hardening
+  - `[x]` Final build (`npm run build`) verification

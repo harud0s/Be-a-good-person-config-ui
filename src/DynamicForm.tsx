@@ -10,11 +10,11 @@ import { SortableArrayItem } from './components/SortableArrayItem';
 import { toast } from 'sonner';
 
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(({ className, ...props }, ref) => (
-  <input className={["flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50", className].filter(Boolean).join(" ")} ref={ref} {...props} />
+  <input className={["flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm ring-offset-background file:border-0 file:bg-transparent file:text-base file:md:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50", className].filter(Boolean).join(" ")} ref={ref} {...props} />
 ));
 
 const Button = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(({ className, ...props }, ref) => (
-  <button className={["inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2", className].filter(Boolean).join(" ")} ref={ref} {...props} />
+  <button className={["inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 min-h-[44px] px-4 py-2", className].filter(Boolean).join(" ")} ref={ref} {...props} />
 ));
 
 const Label = React.forwardRef<HTMLLabelElement, React.LabelHTMLAttributes<HTMLLabelElement>>(({ className, ...props }, ref) => (
@@ -166,7 +166,7 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
       {isTextMode ? (
         <div className="space-y-4">
           <textarea
-            className="w-full h-[60vh] font-mono text-sm p-4 border rounded-md bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full h-[60vh] font-mono text-base md:text-sm p-4 border rounded-md bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={textValue}
             onChange={(e) => {
               setTextValue(e.target.value);
@@ -283,7 +283,7 @@ function RecursiveField(props: RecursiveFieldProps) {
         <Label className={errorMessage ? "text-destructive" : ""}>{name}</Label>
         <select
           {...register(path)}
-          className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${errorMessage ? 'border-destructive focus-visible:ring-destructive' : 'border-input'}`}
+          className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-base md:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${errorMessage ? 'border-destructive focus-visible:ring-destructive' : 'border-input'}`}
         >
           {enumValues.map((opt) => (
             <option key={String(opt)} value={opt || ""}>
@@ -300,10 +300,10 @@ function RecursiveField(props: RecursiveFieldProps) {
   if (typeof value === 'boolean') {
     return (
       <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2">
+        <label htmlFor={path} className="flex items-center gap-3 cursor-pointer min-h-[44px] p-2 -ml-2 rounded-md hover:bg-muted/50">
           <input type="checkbox" {...register(path)} id={path} className="h-4 w-4 accent-primary" />
-          <Label htmlFor={path} className={errorMessage ? "text-destructive" : ""}>{name}</Label>
-        </div>
+          <span className={errorMessage ? "text-destructive text-sm font-medium" : "text-sm font-medium"}>{name}</span>
+        </label>
         {errorMessage && <span className="text-xs text-destructive font-medium">{errorMessage}</span>}
       </div>
     );
@@ -372,7 +372,7 @@ function ArrayField(props: RecursiveFieldProps) {
             <div className="flex items-center gap-1 shrink-0">
               <Button
                  type="button"
-                 className="h-10 w-10 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                 className="h-10 w-10 md:h-8 md:w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
                  onClick={() => { 
                    if (index > 0) {
                      const newArr = [...currentArray];
@@ -386,7 +386,7 @@ function ArrayField(props: RecursiveFieldProps) {
               </Button>
               <Button
                  type="button"
-                 className="h-10 w-10 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                 className="h-10 w-10 md:h-8 md:w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
                  onClick={() => { 
                    if (index < currentArray.length - 1) {
                      const newArr = [...currentArray];
@@ -398,7 +398,7 @@ function ArrayField(props: RecursiveFieldProps) {
               >
                 <ArrowDown className="h-4 w-4" />
               </Button>
-              <Button type="button" className="h-10 px-4 bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-1" onClick={() => {
+              <Button type="button" className="h-10 px-3 text-sm md:h-6 md:px-2 md:text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-1" onClick={() => {
                  const newArr = [...currentArray];
                  newArr.splice(index, 1);
                  setValue(path, newArr, { shouldDirty: true });
@@ -611,7 +611,7 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
               <>
                 <Button
                    type="button"
-                   className="h-8 w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                   className="h-10 w-10 md:h-8 md:w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
                    onClick={(e) => { e.stopPropagation(); if (index > 0) move(index, index - 1); }}
                    disabled={index === 0}
                 >
@@ -619,7 +619,7 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
                 </Button>
                 <Button
                    type="button"
-                   className="h-8 w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                   className="h-10 w-10 md:h-8 md:w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
                    onClick={(e) => { e.stopPropagation(); if (index < totalLength - 1) move(index, index + 1); }}
                    disabled={index === totalLength - 1}
                 >
@@ -629,7 +629,7 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
             )}
             <Button 
               type="button" 
-              className="h-6 px-2 text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-2"
+              className="h-10 px-3 text-sm md:h-6 md:px-2 md:text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-2"
               onClick={(e) => { e.stopPropagation(); remove(index); }}
             >
               移除

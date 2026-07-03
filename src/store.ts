@@ -160,8 +160,16 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   },
 
   checkUnsavedChanges: () => {
-    const { drafts } = getStore();
-    return Object.keys(drafts).length > 0;
+    const { drafts, workspaceMode, files, originalContents, isDirty } = getStore();
+    if (isDirty) return true;
+    if (Object.keys(drafts).length > 0) return true;
+    
+    if (workspaceMode === 'github') {
+      const hasUncommitted = files.some(f => f.contentString !== undefined && f.contentString !== originalContents[f.path]);
+      if (hasUncommitted) return true;
+    }
+    
+    return false;
   },
 
   openDirectory: async () => {
@@ -188,7 +196,8 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         drafts: {},
         originalContents: newOriginalContents,
         githubRepo: undefined,
-        githubPassword: undefined
+        githubPassword: undefined,
+        requiresPermission: false
       });
     } catch (error) {
       console.error('Failed to open directory:', error);
@@ -244,7 +253,8 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         drafts: {},
         originalContents: newOriginalContents,
         githubRepo: undefined,
-        githubPassword: undefined
+        githubPassword: undefined,
+        requiresPermission: false
       });
     } catch (error) {
       console.error('Failed to import zip:', error);
@@ -276,9 +286,23 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
 
   openGitHubMode: async (repo: string, password: string) => {
     try {
-      const res = await fetch(`${WORKER_URL}/files?repo=${encodeURIComponent(repo)}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      
+      let res;
+      try {
+        res = await fetch(`${WORKER_URL}/files?repo=${encodeURIComponent(repo)}`, {
+          signal: controller.signal
+        });
+      } catch (e: any) {
+        if (e.name === 'AbortError') throw new Error('請求逾時 (30秒)，請檢查網路連線或稍後再試');
+        throw new Error(`網路連線失敗: ${e.message}`);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
       if (!res.ok) {
-        const text = await res.text();
+        const text = await res.text().catch(() => res.statusText);
         throw new Error(`Failed to fetch from GitHub Proxy: ${text}`);
       }
       
@@ -314,7 +338,8 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         githubRepo: repo,
         githubPassword: password,
         drafts: {},
-        originalContents: newOriginalContents
+        originalContents: newOriginalContents,
+        requiresPermission: false
       });
       
       if (data.errors && data.errors.length > 0) {
@@ -341,17 +366,29 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
       throw new Error('No changes to commit');
     }
 
-    const res = await fetch(`${WORKER_URL}/commit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        repo: githubRepo,
-        password: githubPassword,
-        changes,
-        commitMessage: message,
-        authorName
-      })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let res;
+    try {
+      res = await fetch(`${WORKER_URL}/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: githubRepo,
+          password: githubPassword,
+          changes,
+          commitMessage: message,
+          authorName
+        }),
+        signal: controller.signal
+      });
+    } catch (e: any) {
+      if (e.name === 'AbortError') throw new Error('Commit 請求逾時 (30秒)，請檢查網路連線');
+      throw new Error(`網路連線失敗: ${e.message}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ error: res.statusText }));
@@ -386,7 +423,21 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
     const { githubRepo } = getStore();
     if (!githubRepo) throw new Error('Not in GitHub mode');
 
-    const res = await fetch(`${WORKER_URL}/history?repo=${encodeURIComponent(githubRepo)}&path=${encodeURIComponent(path)}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let res;
+    try {
+      res = await fetch(`${WORKER_URL}/history?repo=${encodeURIComponent(githubRepo)}&path=${encodeURIComponent(path)}`, {
+        signal: controller.signal
+      });
+    } catch (e: any) {
+      if (e.name === 'AbortError') throw new Error('讀取歷史紀錄逾時 (30秒)，請檢查網路連線');
+      throw new Error(`網路連線失敗: ${e.message}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     if (!res.ok) {
       throw new Error('Failed to fetch history');
     }

@@ -2,8 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useEditorStore } from './store';
 import DynamicForm from './DynamicForm';
 import DiffViewer from './components/DiffViewer';
-import { FolderOpen, Menu, X, FileJson, FileArchive, Download } from 'lucide-react';
+import { FolderOpen, Menu, X, FileJson, FileArchive, Download, Cloud, History, ChevronDown } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
+
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import * as AlertDialog from '@radix-ui/react-alert-dialog';
+import { GitHubLoginDialog } from './components/GitHubLoginDialog';
+import { CommitDialog } from './components/CommitDialog';
+import { HistoryDrawer } from './components/HistoryDrawer';
 
 export default function App() {
   const files = useEditorStore(state => state.files);
@@ -11,7 +17,7 @@ export default function App() {
   const activeFileContent = useEditorStore(state => state.activeFileContent);
   const isDirty = useEditorStore(state => state.isDirty);
   const drafts = useEditorStore(state => state.drafts);
-  const isZipMode = useEditorStore(state => state.isZipMode);
+  const workspaceMode = useEditorStore(state => state.workspaceMode);
   
   const openDirectory = useEditorStore(state => state.openDirectory);
   const openFile = useEditorStore(state => state.openFile);
@@ -23,11 +29,19 @@ export default function App() {
   const exportZip = useEditorStore(state => state.exportZip);
   const requiresPermission = useEditorStore(state => state.requiresPermission);
   const restoreSession = useEditorStore(state => state.restoreSession);
+  const checkUnsavedChanges = useEditorStore(state => state.checkUnsavedChanges);
+  const openGitHubMode = useEditorStore(state => state.openGitHubMode);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [isEditingMeta, setIsEditingMeta] = useState(false);
   const [isDiffViewerOpen, setIsDiffViewerOpen] = useState(false);
+  
+  // Dialog States
+  const [pendingAction, setPendingAction] = useState<'local' | 'zip' | 'github' | null>(null);
+  const [isGitHubLoginOpen, setIsGitHubLoginOpen] = useState(false);
+  const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [historyFilePath, setHistoryFilePath] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,16 +60,16 @@ export default function App() {
       : null;
   }, [activeFileContent, activeFile?.name]);
 
-  const handleSaveRoot = async (data: any) => {
+  const handleSaveRoot = async (data: unknown) => {
     try {
       updateActiveContent(data, false);
       toast.success(`已將 ${activeFile?.name} 的變更存入暫存`);
-    } catch (e) {
+    } catch {
       toast.error('儲存失敗');
     }
   };
 
-  const handleSaveItem = async (data: any) => {
+  const handleSaveItem = async (data: unknown) => {
     if (mainArrayKey && editingItemIndex !== null) {
       const newArray = [...activeFileContent[mainArrayKey]];
       newArray[editingItemIndex] = data;
@@ -63,7 +77,7 @@ export default function App() {
         updateActiveContent({ ...activeFileContent, [mainArrayKey]: newArray }, false);
         toast.success(`已將項目變更存入暫存`);
         setEditingItemIndex(null);
-      } catch (e) {
+      } catch {
         toast.error('儲存失敗');
       }
     }
@@ -76,6 +90,7 @@ export default function App() {
   };
 
   const handleOpenFile = (file: any) => {
+    if (isDirty && !window.confirm("目前檔案有未儲存的變更，切換檔案將會遺失這些變更。確定要切換嗎？")) return;
     openFile(file).catch(() => toast.error('無法讀取檔案'));
     setIsSidebarOpen(false);
     setEditingItemIndex(null);
@@ -93,13 +108,35 @@ export default function App() {
     }
   }
 
+  const handleAction = (action: 'local' | 'zip' | 'github') => {
+    if (checkUnsavedChanges()) {
+      setPendingAction(action);
+    } else {
+      executeAction(action);
+    }
+  };
+
+  const executeAction = (action: 'local' | 'zip' | 'github') => {
+    setPendingAction(null);
+    setEditingItemIndex(null);
+    setIsEditingMeta(false);
+    setHistoryFilePath(null);
+    if (action === 'local') {
+      handleOpenDirectory();
+    } else if (action === 'zip') {
+      fileInputRef.current?.click();
+    } else if (action === 'github') {
+      setIsGitHubLoginOpen(true);
+    }
+  };
+
   const handleImportZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
       await importZip(file);
       toast.success('ZIP 已載入');
-    } catch (error) {
+    } catch {
       toast.error('載入 ZIP 失敗');
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -107,10 +144,15 @@ export default function App() {
   };
 
   const handleExportZip = async () => {
+    if (isDirty) {
+      toast.error('有尚未「儲存修改」的表單內容，請先儲存！');
+      return;
+    }
     try {
+      await useEditorStore.getState().saveAllDrafts();
       await exportZip();
       toast.success('ZIP 匯出成功');
-    } catch (error) {
+    } catch {
       toast.error('匯出 ZIP 失敗');
     }
   };
@@ -129,7 +171,7 @@ export default function App() {
       />
 
       {/* Top Navbar */}
-      <header className="h-14 border-b flex items-center justify-between px-4 sticky top-0 bg-background z-10 overflow-x-auto">
+      <header className="min-h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] border-b flex items-center justify-between px-4 sticky top-0 bg-background z-10 overflow-x-auto">
         <div className="flex items-center gap-3 shrink-0">
           <button className="md:hidden p-2" onClick={() => setIsSidebarOpen(true)}>
             <Menu className="w-5 h-5" />
@@ -138,36 +180,57 @@ export default function App() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={() => setIsDiffViewerOpen(true)}
-            className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
+            onClick={() => {
+              if (isDirty) {
+                toast.error('您有尚未「儲存修改」的表單內容，請先儲存再查看 Diffs！');
+                return;
+              }
+              setIsDiffViewerOpen(true);
+            }}
+            className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 min-h-[44px] rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
           >
             See Diffs
           </button>
-          {isZipMode && (
+          {workspaceMode === 'zip' && (
             <button
               onClick={handleExportZip}
-              className="flex items-center gap-2 bg-secondary text-secondary-foreground px-3 py-2 rounded-md text-sm font-medium hover:bg-secondary/80 transition-colors"
+              className="flex items-center gap-2 bg-secondary text-secondary-foreground px-3 py-2 min-h-[44px] rounded-md text-sm font-medium hover:bg-secondary/80 transition-colors"
             >
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">匯出 ZIP</span>
             </button>
           )}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 border bg-background px-3 py-2 rounded-md text-sm font-medium hover:bg-muted transition-colors"
-          >
-            <FileArchive className="w-4 h-4" />
-            <span className="hidden sm:inline">開啟 ZIP (Mobile)</span>
-            <span className="sm:hidden">ZIP</span>
-          </button>
-          <button
-            onClick={handleOpenDirectory}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-3 py-2 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
-            <FolderOpen className="w-4 h-4" />
-            <span className="hidden sm:inline">開啟資料夾 (Desktop)</span>
-            <span className="sm:hidden">資料夾</span>
-          </button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button className="flex items-center gap-2 bg-primary text-primary-foreground px-3 py-2 min-h-[44px] rounded-md text-sm font-medium hover:bg-primary/90 transition-colors outline-none">
+                開啟專案...
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content className="min-w-[200px] bg-popover text-popover-foreground rounded-md shadow-md p-1 z-50 border" sideOffset={5} align="end">
+                <DropdownMenu.Item 
+                  className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
+                  onSelect={() => handleAction('local')}
+                >
+                  <FolderOpen className="w-4 h-4" /> 開啟資料夾 (Desktop)
+                </DropdownMenu.Item>
+                <DropdownMenu.Item 
+                  className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
+                  onSelect={() => handleAction('zip')}
+                >
+                  <FileArchive className="w-4 h-4" /> 開啟 ZIP (Mobile)
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator className="h-px bg-border my-1" />
+                <DropdownMenu.Item 
+                  className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
+                  onSelect={() => handleAction('github')}
+                >
+                  <Cloud className="w-4 h-4" /> 從 GitHub Repo 載入
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
       </header>
 
@@ -176,14 +239,14 @@ export default function App() {
         <aside
           className={`
             absolute inset-y-0 left-0 z-30 w-72 border-r bg-background transform transition-transform duration-200 ease-in-out
-            md:relative md:translate-x-0
+            md:relative md:translate-x-0 pb-[env(safe-area-inset-bottom)]
             ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
           `}
         >
           <div className="h-full flex flex-col">
             <div className="p-4 border-b flex items-center justify-between md:hidden">
               <span className="font-semibold">檔案清單</span>
-              <button onClick={() => setIsSidebarOpen(false)}>
+              <button className="w-11 h-11 flex items-center justify-center rounded-md hover:bg-muted" onClick={() => setIsSidebarOpen(false)}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -224,10 +287,22 @@ export default function App() {
                           : 'hover:bg-muted text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      <div className="flex items-center gap-2 font-medium">
-                        <FileJson className="w-4 h-4" />
-                        {file.name}
-                        {drafts[file.path] && <span className="w-2 h-2 rounded-full bg-orange-500 ml-auto"></span>}
+                      <div className="flex items-center gap-2 font-medium w-full">
+                        <FileJson className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{file.name}</span>
+                        {drafts[file.path] && <span className="w-2 h-2 rounded-full bg-orange-500 ml-auto shrink-0"></span>}
+                        {workspaceMode === 'github' && (
+                          <button 
+                            className={`p-1 hover:bg-background rounded text-muted-foreground hover:text-foreground shrink-0 ${!drafts[file.path] ? 'ml-auto' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setHistoryFilePath(file.path);
+                            }}
+                            title="History"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                       {file.metaDescription && (
                         <span className="text-xs opacity-70 line-clamp-2 pl-6">
@@ -251,22 +326,25 @@ export default function App() {
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 relative">
-          {!activeFile ? (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-2">
-              <FileJson className="w-12 h-12 opacity-20" />
-              <p>請從左側選擇設定檔開始編輯</p>
-            </div>
-          ) : (
-            <div className="max-w-6xl mx-auto pb-24">
+        <main className="flex-1 overflow-y-auto">
+        {!activeFileContent ? (
+          <div className="flex-1 h-full flex flex-col items-center justify-center text-muted-foreground">
+            <FileJson className="w-16 h-16 mb-4 opacity-20" />
+            <p>選擇左側檔案開始編輯</p>
+          </div>
+        ) : (
+            <div className="max-w-6xl mx-auto pb-[calc(6rem+env(safe-area-inset-bottom))] p-4 md:p-6">
               <div className="mb-6 pb-4 border-b">
                 <h2 className="text-2xl font-bold flex items-center gap-2">
-                  {activeFile.name}
+                  {activeFile?.name}
                   {isDirty && <span className="text-sm font-normal text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">未儲存</span>}
                 </h2>
                 <div className="flex items-center gap-4 mt-2">
                   <p className="text-xs opacity-50">Version: {meta?.version}</p>
-                  <button onClick={() => setIsEditingMeta(true)} className="text-xs bg-secondary px-2 py-1 rounded hover:bg-secondary/80">編輯 Meta</button>
+                  <button onClick={() => {
+                    if (isDirty && !window.confirm("有未儲存的變更，執行此動作將遺失變更。確定繼續？")) return;
+                    setIsEditingMeta(true);
+                  }} className="text-xs bg-secondary h-11 px-4 rounded hover:bg-secondary/80">編輯 Meta</button>
                 </div>
                 <p className="text-muted-foreground mt-1">{meta?.description}</p>
               </div>
@@ -283,6 +361,7 @@ export default function App() {
                         key={`${index}-${subtitle || title}`} 
                         className="border rounded-lg p-4 bg-card text-card-foreground shadow-sm hover:border-primary cursor-pointer transition-colors relative"
                         onClick={() => {
+                          if (isDirty && !window.confirm("目前項目有未儲存的變更，切換將會遺失這些變更。確定要切換嗎？")) return;
                           setEditingItemIndex(index);
                           setIsEditingMeta(false);
                           setDirty(false); // clear dirty state for new edit
@@ -297,8 +376,9 @@ export default function App() {
                   
                   {/* 新增項目按鈕 */}
                   <div 
-                    className="border border-dashed rounded-lg p-4 flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+                    className="border border-dashed rounded-lg p-4 flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer min-h-[44px] transition-colors"
                     onClick={() => {
+                      if (isDirty && !window.confirm("有未儲存的變更，執行此動作將遺失變更。確定繼續？")) return;
                       // Determine default empty object
                       const template = activeFileContent[mainArrayKey][0] || {};
                       const newItem = Object.keys(template).reduce((acc, key) => ({ ...acc, [key]: null }), {});
@@ -316,8 +396,8 @@ export default function App() {
                 // 全域表單模式 (如 game_config.json)
                 <div className="max-w-2xl">
                   <DynamicForm 
-                    key={activeFile.name}
-                    filename={activeFile.name}
+                    key={activeFile?.name}
+                    filename={activeFile?.name || ''}
                     isItem={false}
                     data={activeFileContent} 
                     meta={meta} 
@@ -332,7 +412,7 @@ export default function App() {
 
         {/* 編輯抽屜 (Drawer/Sheet) */}
         {(editingItemIndex !== null && mainArrayKey) || isEditingMeta ? (
-          <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[500px] border-l bg-background shadow-xl transform transition-transform duration-300 flex flex-col">
+          <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[500px] border-l bg-background shadow-xl transform transition-transform duration-300 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
             <div className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-10">
               <h3 className="font-bold flex items-center gap-2">
                 {isEditingMeta ? '編輯 Meta' : '編輯資料'}
@@ -340,16 +420,17 @@ export default function App() {
               </h3>
               <button 
                 onClick={() => {
+                  if (isDirty && !window.confirm("確定要關閉嗎？未儲存的變更將會遺失。")) return;
                   setEditingItemIndex(null);
                   setIsEditingMeta(false);
                   setDirty(false);
                 }} 
-                className="p-1 hover:bg-muted rounded"
+                className="w-11 h-11 flex items-center justify-center hover:bg-muted rounded"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 pb-[calc(6rem+env(safe-area-inset-bottom))]">
               {isEditingMeta ? (
                 <DynamicForm 
                   key={`${activeFile?.name}-meta`}
@@ -380,10 +461,58 @@ export default function App() {
           </div>
         ) : null}
 
-        {isDiffViewerOpen && (
-          <DiffViewer onClose={() => setIsDiffViewerOpen(false)} />
-        )}
       </div>
+
+      {/* Dialogs */}
+      <GitHubLoginDialog 
+        open={isGitHubLoginOpen}
+        onOpenChange={setIsGitHubLoginOpen}
+        onConnect={async (repo, password) => {
+          await openGitHubMode(repo, password);
+        }}
+      />
+      
+      <CommitDialog 
+        open={isCommitDialogOpen}
+        onOpenChange={setIsCommitDialogOpen}
+      />
+      
+      <HistoryDrawer 
+        open={!!historyFilePath}
+        onOpenChange={(open) => !open && setHistoryFilePath(null)}
+        path={historyFilePath}
+      />
+      
+      <AlertDialog.Root open={!!pendingAction} onOpenChange={(open) => !open && setPendingAction(null)}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card p-6 rounded-lg shadow-xl w-[90vw] max-w-md z-50">
+            <AlertDialog.Title className="text-xl font-bold mb-2">放棄未儲存的變更？</AlertDialog.Title>
+            <AlertDialog.Description className="text-muted-foreground mb-6">
+              您有尚未儲存或尚未 Commit 的變更。若開啟新專案，這些變更將會永久遺失。確定要繼續嗎？
+            </AlertDialog.Description>
+            <div className="flex justify-end gap-3">
+              <AlertDialog.Cancel asChild>
+                <button className="px-4 py-2 border rounded hover:bg-secondary">取消</button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button 
+                  className="px-4 py-2 bg-destructive text-destructive-foreground rounded hover:bg-destructive/90"
+                  onClick={() => pendingAction && executeAction(pendingAction)}
+                >
+                  強制繼續
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+      
+      <DiffViewer 
+        isOpen={isDiffViewerOpen}
+        onClose={() => setIsDiffViewerOpen(false)}
+        onCommitRequest={() => setIsCommitDialogOpen(true)}
+      />
     </div>
   );
 }
