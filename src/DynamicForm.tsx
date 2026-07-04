@@ -329,7 +329,7 @@ function ObjectField(props: RecursiveFieldProps) {
   const safeValue = value || {};
   const keys = Object.keys(safeValue);
   
-  const hasDeltas = keys.includes('exp_delta') && keys.includes('aca_delta') && keys.includes('hp_delta');
+  const hasDeltas = ['exp_delta', 'aca_delta', 'hp_delta'].some(k => keys.includes(k));
   const normalKeys = hasDeltas ? keys.filter(k => k !== 'exp_delta' && k !== 'aca_delta' && k !== 'hp_delta') : keys;
 
   return (

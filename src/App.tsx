@@ -25,10 +25,14 @@ function FullTextEditor({ data, onSave, onChange }: { data: any, onSave: (d: any
       />
       <div>
         <button className="w-full bg-primary text-primary-foreground h-11 rounded font-medium hover:bg-primary/90 transition-colors shadow" onClick={() => {
+          let parsed;
           try {
-            const parsed = JSON.parse(text);
-            onSave(parsed);
-          } catch(e) { toast.error("JSON 格式錯誤，無法儲存"); }
+            parsed = JSON.parse(text);
+          } catch(e) { 
+            toast.error("JSON 格式錯誤，無法儲存"); 
+            return;
+          }
+          onSave(parsed);
         }}>儲存修改</button>
       </div>
     </div>
@@ -371,11 +375,17 @@ export default function App() {
                   <button onClick={() => {
                     if (isDirty && !window.confirm("有未儲存的變更，執行此動作將遺失變更。確定繼續？")) return;
                     setIsEditingMeta(true);
-                  }} className="text-xs bg-secondary h-11 px-4 rounded hover:bg-secondary/80">編輯 Meta</button>
+                    setIsEditingFullText(false);
+                    setEditingItemIndex(null);
+                    setDirty(false);
+                  }} className="text-xs bg-secondary text-secondary-foreground h-11 px-4 rounded hover:bg-secondary/80">編輯 Meta</button>
                   <button onClick={() => {
                     if (isDirty && !window.confirm("有未儲存的變更，執行此動作將遺失變更。確定繼續？")) return;
                     setIsEditingFullText(true);
-                  }} className="text-xs bg-secondary h-11 px-4 rounded hover:bg-secondary/80">以純文字編輯</button>
+                    setIsEditingMeta(false);
+                    setEditingItemIndex(null);
+                    setDirty(false);
+                  }} className="text-xs bg-secondary text-secondary-foreground h-11 px-4 rounded hover:bg-secondary/80">以純文字編輯</button>
                 </div>
                 <p className="text-muted-foreground mt-1">{meta?.description}</p>
               </div>
@@ -417,6 +427,9 @@ export default function App() {
                       
                       const newArray = [...activeFileContent[mainArrayKey], newItem];
                       saveFile({ ...activeFileContent, [mainArrayKey]: newArray }).then(() => {
+                        setIsEditingMeta(false);
+                        setIsEditingFullText(false);
+                        setDirty(false);
                         setEditingItemIndex(newArray.length - 1);
                       });
                     }}
@@ -466,6 +479,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto p-6 pb-[calc(6rem+env(safe-area-inset-bottom))]">
               {isEditingFullText ? (
                 <FullTextEditor 
+                  key={`full-${activeFile?.name}`}
                   data={activeFileContent}
                   onSave={(parsed) => {
                     updateActiveContent(parsed, false);
@@ -513,7 +527,12 @@ export default function App() {
         open={isGitHubLoginOpen}
         onOpenChange={setIsGitHubLoginOpen}
         onConnect={async (repo, password) => {
-          await openGitHubMode(repo, password);
+          try {
+            await openGitHubMode(repo, password);
+            setIsGitHubLoginOpen(false);
+          } catch (e) {
+            // openGitHubMode already shows toasts for errors
+          }
         }}
       />
       
