@@ -324,14 +324,20 @@ function RecursiveField(props: RecursiveFieldProps) {
 }
 
 function ObjectField(props: RecursiveFieldProps) {
-  const { name, value, meta, path } = props;
+  const { name, value, meta, path, register } = props;
   // value might be undefined if it's a new array item
   const safeValue = value || {};
+  const keys = Object.keys(safeValue);
+  
+  const hasDeltas = keys.includes('exp_delta') && keys.includes('aca_delta') && keys.includes('hp_delta');
+  const normalKeys = hasDeltas ? keys.filter(k => k !== 'exp_delta' && k !== 'aca_delta' && k !== 'hp_delta') : keys;
+
   return (
     <div className="p-4 border rounded-md space-y-4 bg-muted/20">
-      <h4 className="font-semibold text-lg capitalize">{name}</h4>
+      {isNaN(Number(name)) && <h4 className="font-semibold text-lg capitalize">{name}</h4>}
       {meta?.[`${name}_note`] && <p className="text-xs text-muted-foreground">{meta[`${name}_note`]}</p>}
-      {Object.keys(safeValue).map((subKey) => (
+      
+      {normalKeys.map((subKey) => (
         <RecursiveField
           {...props}
           key={subKey}
@@ -341,6 +347,33 @@ function ObjectField(props: RecursiveFieldProps) {
           parentData={safeValue}
         />
       ))}
+
+      {hasDeltas && (
+        <div className="mt-4 border rounded-md overflow-hidden bg-background">
+          <table className="w-full text-sm text-center border-collapse">
+            <thead className="bg-muted text-muted-foreground">
+              <tr>
+                <th className="p-2 border-b border-r font-medium">exp_delta</th>
+                <th className="p-2 border-b border-r font-medium">aca_delta</th>
+                <th className="p-2 border-b font-medium">hp_delta</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="p-2 border-r">
+                  <Input type="number" className="h-8 text-center" {...register(`${path}.exp_delta`, { valueAsNumber: true })} />
+                </td>
+                <td className="p-2 border-r">
+                  <Input type="number" className="h-8 text-center" {...register(`${path}.aca_delta`, { valueAsNumber: true })} />
+                </td>
+                <td className="p-2">
+                  <Input type="number" className="h-8 text-center" {...register(`${path}.hp_delta`, { valueAsNumber: true })} />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -581,14 +614,24 @@ function ArrayField(props: RecursiveFieldProps) {
 
 function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLength, props, control, hideArrows }: any) {
   const [isOpen, setIsOpen] = React.useState(false);
-  const [label, rank, status, question] = useWatch({ 
+  const [label, rank, status, question, display_name, event_name, event_id] = useWatch({ 
     control, 
-    name: [`${path}.${index}.label`, `${path}.${index}.rank`, `${path}.${index}.status`, `${path}.${index}.question`] 
+    name: [
+      `${path}.${index}.label`, 
+      `${path}.${index}.rank`, 
+      `${path}.${index}.status`, 
+      `${path}.${index}.question`,
+      `${path}.${index}.display_name`,
+      `${path}.${index}.event_name`,
+      `${path}.${index}.event_id`
+    ] 
   });
   
   // Header Preview Logic
   let previewTitle = `Item ${index + 1}`;
-  if (label !== undefined && label !== null && label !== "") {
+  if (display_name || event_name) {
+    previewTitle = display_name || event_name;
+  } else if (label !== undefined && label !== null && label !== "") {
     previewTitle = `選項: ${label}`;
   } else if (rank !== undefined && rank !== null && rank !== "") {
     previewTitle = `名次: ${rank}`;
@@ -605,7 +648,10 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
          className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
          onClick={() => setIsOpen(!isOpen)}
        >
-         <h5 className="font-medium text-sm text-card-foreground line-clamp-1 flex-1 pr-2">{previewTitle}</h5>
+         <div className="flex flex-col flex-1 pr-2 overflow-hidden">
+           <h5 className="font-medium text-sm text-card-foreground truncate">{previewTitle}</h5>
+           {event_id && <span className="text-xs text-muted-foreground font-mono mt-0.5 truncate">{event_id}</span>}
+         </div>
          <div className="flex items-center gap-1 shrink-0">
             {!hideArrows && (
               <>

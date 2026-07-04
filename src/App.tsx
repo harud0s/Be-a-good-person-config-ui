@@ -11,6 +11,30 @@ import { GitHubLoginDialog } from './components/GitHubLoginDialog';
 import { CommitDialog } from './components/CommitDialog';
 import { HistoryDrawer } from './components/HistoryDrawer';
 
+function FullTextEditor({ data, onSave, onChange }: { data: any, onSave: (d: any) => void, onChange: () => void }) {
+  const [text, setText] = useState(JSON.stringify(data, null, 2));
+  return (
+    <div className="flex flex-col h-full space-y-4">
+      <textarea 
+        className="w-full h-[60vh] font-mono text-sm p-4 border rounded bg-muted/30 focus:outline-none focus:ring-2 focus:ring-ring"
+        value={text}
+        onChange={e => {
+          setText(e.target.value);
+          onChange();
+        }}
+      />
+      <div>
+        <button className="w-full bg-primary text-primary-foreground h-11 rounded font-medium hover:bg-primary/90 transition-colors shadow" onClick={() => {
+          try {
+            const parsed = JSON.parse(text);
+            onSave(parsed);
+          } catch(e) { toast.error("JSON 格式錯誤，無法儲存"); }
+        }}>儲存修改</button>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const files = useEditorStore(state => state.files);
   const activeFile = useEditorStore(state => state.activeFile);
@@ -42,6 +66,7 @@ export default function App() {
   const [isGitHubLoginOpen, setIsGitHubLoginOpen] = useState(false);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [historyFilePath, setHistoryFilePath] = useState<string | null>(null);
+  const [isEditingFullText, setIsEditingFullText] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -95,6 +120,7 @@ export default function App() {
     setIsSidebarOpen(false);
     setEditingItemIndex(null);
     setIsEditingMeta(false);
+    setIsEditingFullText(false);
   };
 
   const handleOpenDirectory = async () => {
@@ -120,6 +146,7 @@ export default function App() {
     setPendingAction(null);
     setEditingItemIndex(null);
     setIsEditingMeta(false);
+    setIsEditingFullText(false);
     setHistoryFilePath(null);
     if (action === 'local') {
       handleOpenDirectory();
@@ -211,20 +238,20 @@ export default function App() {
               <DropdownMenu.Content className="min-w-[200px] bg-popover text-popover-foreground rounded-md shadow-md p-1 z-50 border" sideOffset={5} align="end">
                 <DropdownMenu.Item 
                   className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
-                  onSelect={() => handleAction('local')}
+                  onSelect={(e) => { e.preventDefault(); setTimeout(() => handleAction('local'), 0); }}
                 >
                   <FolderOpen className="w-4 h-4" /> 開啟資料夾 (Desktop)
                 </DropdownMenu.Item>
                 <DropdownMenu.Item 
                   className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
-                  onSelect={() => handleAction('zip')}
+                  onSelect={(e) => { e.preventDefault(); setTimeout(() => handleAction('zip'), 0); }}
                 >
                   <FileArchive className="w-4 h-4" /> 開啟 ZIP (Mobile)
                 </DropdownMenu.Item>
                 <DropdownMenu.Separator className="h-px bg-border my-1" />
                 <DropdownMenu.Item 
                   className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
-                  onSelect={() => handleAction('github')}
+                  onSelect={(e) => { e.preventDefault(); setTimeout(() => handleAction('github'), 0); }}
                 >
                   <Cloud className="w-4 h-4" /> 從 GitHub Repo 載入
                 </DropdownMenu.Item>
@@ -345,6 +372,10 @@ export default function App() {
                     if (isDirty && !window.confirm("有未儲存的變更，執行此動作將遺失變更。確定繼續？")) return;
                     setIsEditingMeta(true);
                   }} className="text-xs bg-secondary h-11 px-4 rounded hover:bg-secondary/80">編輯 Meta</button>
+                  <button onClick={() => {
+                    if (isDirty && !window.confirm("有未儲存的變更，執行此動作將遺失變更。確定繼續？")) return;
+                    setIsEditingFullText(true);
+                  }} className="text-xs bg-secondary h-11 px-4 rounded hover:bg-secondary/80">以純文字編輯</button>
                 </div>
                 <p className="text-muted-foreground mt-1">{meta?.description}</p>
               </div>
@@ -364,6 +395,7 @@ export default function App() {
                           if (isDirty && !window.confirm("目前項目有未儲存的變更，切換將會遺失這些變更。確定要切換嗎？")) return;
                           setEditingItemIndex(index);
                           setIsEditingMeta(false);
+                          setIsEditingFullText(false);
                           setDirty(false); // clear dirty state for new edit
                         }}
                       >
@@ -411,11 +443,11 @@ export default function App() {
         </main>
 
         {/* 編輯抽屜 (Drawer/Sheet) */}
-        {(editingItemIndex !== null && mainArrayKey) || isEditingMeta ? (
-          <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[500px] border-l bg-background shadow-xl transform transition-transform duration-300 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+        {(editingItemIndex !== null && mainArrayKey) || isEditingMeta || isEditingFullText ? (
+          <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[600px] border-l bg-background shadow-xl transform transition-transform duration-300 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
             <div className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-10">
               <h3 className="font-bold flex items-center gap-2">
-                {isEditingMeta ? '編輯 Meta' : '編輯資料'}
+                {isEditingFullText ? '純文字編輯 (整份檔案)' : isEditingMeta ? '編輯 Meta' : '編輯資料'}
                 {isDirty && <span className="w-2 h-2 rounded-full bg-orange-500"></span>}
               </h3>
               <button 
@@ -423,6 +455,7 @@ export default function App() {
                   if (isDirty && !window.confirm("確定要關閉嗎？未儲存的變更將會遺失。")) return;
                   setEditingItemIndex(null);
                   setIsEditingMeta(false);
+                  setIsEditingFullText(false);
                   setDirty(false);
                 }} 
                 className="w-11 h-11 flex items-center justify-center hover:bg-muted rounded"
@@ -431,7 +464,18 @@ export default function App() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 pb-[calc(6rem+env(safe-area-inset-bottom))]">
-              {isEditingMeta ? (
+              {isEditingFullText ? (
+                <FullTextEditor 
+                  data={activeFileContent}
+                  onSave={(parsed) => {
+                    updateActiveContent(parsed, false);
+                    setIsEditingFullText(false);
+                    setDirty(false);
+                    toast.success("純文字變更已存入暫存");
+                  }}
+                  onChange={() => setDirty(true)}
+                />
+              ) : isEditingMeta ? (
                 <DynamicForm 
                   key={`${activeFile?.name}-meta`}
                   filename={activeFile?.name}
@@ -442,6 +486,7 @@ export default function App() {
                     const newContent = { ...activeFileContent, _meta: newMeta };
                     updateActiveContent(newContent, false);
                     setIsEditingMeta(false);
+                    setDirty(false);
                     toast.success("Meta 已更新至暫存");
                   }} 
                   onDirtyChange={() => {}}
