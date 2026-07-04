@@ -476,8 +476,7 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
       set({ 
         activeFile: fileEntry, 
         activeFileContent: json, 
-        isDirty: false,
-        originalContents: { ...state.originalContents, [fileEntry.path]: text }
+        isDirty: false
       });
     } catch (error) {
       console.error(`Failed to read file ${fileEntry.name}:`, error);
@@ -501,7 +500,7 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   setDirty: (isDirty: boolean) => set({ isDirty }),
 
   saveFile: async (content: any, targetFile?: FileEntry) => {
-    const { activeFile, files, workspaceMode, drafts, originalContents } = getStore();
+    const { activeFile, files, workspaceMode, drafts } = getStore();
     const fileToSave = targetFile || activeFile;
     if (!fileToSave) throw new Error("No file to save");
 
@@ -521,12 +520,6 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
           drafts: newDrafts
         };
 
-        // For zip mode, we implicitly consider it fully saved so we update originalContents.
-        // For github mode, originalContents tracks the remote state, so we don't update it until commit!
-        if (workspaceMode === 'zip') {
-          updates.originalContents = { ...originalContents, [fileToSave.path]: contentString };
-        }
-
         if (fileToSave.path === activeFile?.path) {
           updates.activeFileContent = content;
           updates.isDirty = false;
@@ -540,9 +533,13 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         const newDrafts = { ...drafts };
         delete newDrafts[fileToSave.path];
         
+        const updatedFiles = files.map(f => 
+          f.path === fileToSave.path ? { ...f, contentString } : f
+        );
+
         const updates: Partial<EditorState> = {
-          drafts: newDrafts,
-          originalContents: { ...originalContents, [fileToSave.path]: contentString }
+          files: updatedFiles,
+          drafts: newDrafts
         };
         if (fileToSave.path === activeFile?.path) {
           updates.activeFileContent = content;

@@ -51,6 +51,13 @@ export default function DiffViewer({ isOpen, onClose, onCommitRequest }: DiffVie
         // Revert to original content by loading from originalContents
         const originalText = originalContents[path] || '{}';
         const state = useEditorStore.getState();
+        
+        if (state.workspaceMode === 'local' && state.files[fileIndex].handle) {
+           state.files[fileIndex].handle.createWritable().then(writable => {
+             writable.write(originalText).then(() => writable.close());
+           }).catch(console.error);
+        }
+
         const updates: any = {
            files: state.files.map((f, i) => i === fileIndex ? { ...f, contentString: originalText } : f)
         };

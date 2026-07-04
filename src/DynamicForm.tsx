@@ -3,7 +3,8 @@ import { useForm, useWatch, useFieldArray } from 'react-hook-form';
 import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form';
 import { ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { getSchemaForForm, NUMERIC_KEYS, PRIMITIVE_ARRAY_KEYS, baseMetaSchema } from './schemas';
+import { getSchemaForForm, NUMERIC_KEYS, PRIMITIVE_ARRAY_KEYS, baseMetaSchema, getDefaultItemForArray } from './schemas';
+import { useEditorStore } from './store';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableArrayItem } from './components/SortableArrayItem';
@@ -53,6 +54,10 @@ const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: 
       const parsed = Number(currentData);
       return isNaN(parsed) ? currentData : parsed;
     }
+  }
+
+  if (typeof currentData === 'number' && isNaN(currentData)) {
+    return null;
   }
   
   if (Array.isArray(currentData)) {
@@ -378,7 +383,21 @@ function ObjectField(props: RecursiveFieldProps) {
   );
 }
 
+function generateEmptyTemplate(obj: any): any {
+  if (Array.isArray(obj)) return [];
+  if (obj !== null && typeof obj === 'object') {
+    const res: any = {};
+    for (const key in obj) {
+      res[key] = generateEmptyTemplate(obj[key]);
+    }
+    return res;
+  }
+  return null;
+}
+
 function ArrayField(props: RecursiveFieldProps) {
+  const activeFile = useEditorStore(state => state.activeFile);
+  const filename = activeFile?.name;
   const { name, value, control, path, setValue } = props;
   
   // For arrays of primitives, we fall back to a controlled map because useFieldArray only supports objects
@@ -601,8 +620,14 @@ function ArrayField(props: RecursiveFieldProps) {
         type="button" 
         className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-input h-10 shadow-sm"
         onClick={() => {
-          const template = value[0] || {};
-          const newItem = Object.keys(template).reduce((acc, k) => ({ ...acc, [k]: null }), {});
+          let newItem;
+          const defaultItem = getDefaultItemForArray(filename, name);
+          if (defaultItem) {
+            newItem = JSON.parse(JSON.stringify(defaultItem));
+          } else {
+            const template = value[0] || {};
+            newItem = generateEmptyTemplate(template);
+          }
           append(newItem);
         }}
       >

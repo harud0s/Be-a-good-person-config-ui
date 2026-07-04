@@ -1,11 +1,9 @@
 import { z } from 'zod';
-
-const nullableString = z.preprocess((val) => {
+const nullableString = z.preprocess(val => {
   if (typeof val === 'string' && val.trim() === '') return null;
   return val;
 }, z.string().nullable().optional());
-
-const optionalNumber = z.preprocess((val) => {
+const optionalNumber = z.preprocess(val => {
   if (val === null || val === undefined) return null;
   if (typeof val === 'string') {
     if (val.trim() === '') return null;
@@ -13,9 +11,10 @@ const optionalNumber = z.preprocess((val) => {
     if (!isNaN(num)) return num;
   }
   return val;
-}, z.number({ message: "必須為數字" }).nullable().optional());
-
-const strictNumber = z.preprocess((val) => {
+}, z.number({
+  message: "必須為數字"
+}).nullable().optional());
+const strictNumber = z.preprocess(val => {
   if (val === null || val === undefined) return undefined;
   if (typeof val === 'string') {
     if (val.trim() === '') return undefined;
@@ -23,9 +22,10 @@ const strictNumber = z.preprocess((val) => {
     if (!isNaN(num)) return num;
   }
   return val;
-}, z.number({ message: "必須為數字" }));
-
-const numberOrString = z.preprocess((val) => {
+}, z.number({
+  message: "必須為數字"
+}));
+const numberOrString = z.preprocess(val => {
   if (val === null || val === undefined) return null;
   if (typeof val === 'string') {
     if (val.trim() === '') return null;
@@ -33,21 +33,19 @@ const numberOrString = z.preprocess((val) => {
     if (!isNaN(num)) return num;
   }
   return val;
-}, z.union([z.number({ message: "必須為數字" }), z.string()]).nullable().optional());
-
-
+}, z.union([z.number({
+  message: "必須為數字"
+}), z.string()]).nullable().optional());
 export const baseMetaSchema = z.object({
   file: z.string().min(1, "必填"),
   version: z.string().min(1, "必填"),
-  description: z.string().min(1, "必填"),
+  description: z.string().min(1, "必填")
 }).catchall(z.any());
-
 export const auctionConfigSchema = z.object({
   start_cost: strictNumber,
   step: strictNumber,
-  min_cost: strictNumber,
-});
-
+  min_cost: strictNumber
+}).catchall(z.any());
 export const gameConfigSchema = z.object({
   _meta: baseMetaSchema,
   initial_hp: strictNumber,
@@ -61,15 +59,13 @@ export const gameConfigSchema = z.object({
   devil_win_threshold_formula: z.string(),
   qualifier_fallback_aca_threshold: strictNumber,
   science_fair_auction: auctionConfigSchema,
-  intl_science_fair_auction: auctionConfigSchema,
-});
-
+  intl_science_fair_auction: auctionConfigSchema
+}).catchall(z.any());
 export const rankRewardSchema = z.object({
   rank: strictNumber,
   aca_reward: strictNumber,
-  exp_reward: strictNumber.optional(),
-});
-
+  exp_reward: strictNumber.optional()
+}).catchall(z.any());
 export const examEventSchema = z.object({
   exam_id: z.string().min(1, "必填"),
   exam_name: z.string().min(1, "必填"),
@@ -81,16 +77,16 @@ export const examEventSchema = z.object({
     note: nullableString,
     ranks: z.array(rankRewardSchema),
     tie_break_rule: z.string(),
-    tie_break_note: nullableString,
-  }).optional(),
+    tie_break_note: nullableString
+  }).catchall(z.any()).optional(),
   olympiad: z.object({
     min_bet: strictNumber,
     max_bet_cap: optionalNumber,
     note: nullableString,
     threshold_dice: z.string(),
     pass_condition: z.string(),
-    aca_reward_on_pass: strictNumber,
-  }).optional(),
+    aca_reward_on_pass: strictNumber
+  }).catchall(z.any()).optional(),
   dutch_auction: z.object({
     note: nullableString,
     start_cost: strictNumber,
@@ -99,25 +95,31 @@ export const examEventSchema = z.object({
     max_winners: strictNumber,
     ranks: z.array(rankRewardSchema),
     tie_break_rule: z.string(),
-    tie_break_note: nullableString,
-  }).optional(),
+    tie_break_note: nullableString
+  }).catchall(z.any()).optional(),
   qualifier: z.object({
     note: nullableString,
     threshold_source: z.string(),
     fallback_threshold: strictNumber,
     fallback_condition: z.string(),
     pass_condition: z.string(),
-    pass_effect: z.object({ hp_delta: numberOrString, exp_reward: strictNumber, note: nullableString }),
-    fail_effect: z.object({ hp_delta: numberOrString, exp_reward: strictNumber, note: nullableString }),
-    devil_immunity: z.boolean(),
-  }).optional(),
-});
-
+    pass_effect: z.object({
+      hp_delta: numberOrString,
+      exp_reward: strictNumber,
+      note: nullableString
+    }),
+    fail_effect: z.object({
+      hp_delta: numberOrString,
+      exp_reward: strictNumber,
+      note: nullableString
+    }),
+    devil_immunity: z.boolean()
+  }).catchall(z.any()).optional()
+}).catchall(z.any());
 export const examEventsFileSchema = z.object({
   _meta: baseMetaSchema,
-  exams: z.array(examEventSchema),
-});
-
+  exams: z.array(examEventSchema)
+}).catchall(z.any());
 export const eventSequenceNodeSchema = z.object({
   index: strictNumber,
   display_name: z.string(),
@@ -126,14 +128,12 @@ export const eventSequenceNodeSchema = z.object({
   year: strictNumber,
   semester: z.string(),
   is_fixed_sudden: z.boolean(),
-  note: nullableString,
-});
-
+  note: nullableString
+}).catchall(z.any());
 export const eventSequenceFileSchema = z.object({
   _meta: baseMetaSchema,
-  sequence: z.array(eventSequenceNodeSchema),
-});
-
+  sequence: z.array(eventSequenceNodeSchema)
+}).catchall(z.any());
 export const goalCardSchema = z.object({
   goal_id: z.string().min(1, "必填"),
   goal_name: z.string().min(1, "必填"),
@@ -147,15 +147,13 @@ export const goalCardSchema = z.object({
   is_devil: z.boolean(),
   devil_win_condition: nullableString,
   note: nullableString,
-  devil_revival_note: nullableString,
-});
-
+  devil_revival_note: nullableString
+}).catchall(z.any());
 export const goalCardsFileSchema = z.object({
   _meta: baseMetaSchema,
   goal_cards: z.array(goalCardSchema),
-  elimination_note: nullableString,
-});
-
+  elimination_note: nullableString
+}).catchall(z.any());
 export const normalEventOptionSchema = z.object({
   option_index: strictNumber,
   label: nullableString,
@@ -165,20 +163,17 @@ export const normalEventOptionSchema = z.object({
   triggers_sudden: z.boolean(),
   dice_type: nullableString,
   dice_formula: nullableString,
-  note: nullableString,
-});
-
+  note: nullableString
+}).catchall(z.any());
 export const normalEventSchema = z.object({
   event_id: z.string().min(1, "必填"),
   event_name: z.string().min(1, "必填"),
-  options: z.array(normalEventOptionSchema),
-});
-
+  options: z.array(normalEventOptionSchema)
+}).catchall(z.any());
 export const normalEventsFileSchema = z.object({
   _meta: baseMetaSchema,
-  events: z.array(normalEventSchema),
-});
-
+  events: z.array(normalEventSchema)
+}).catchall(z.any());
 export const skillCardSchema = z.object({
   card_id: z.string().min(1, "必填"),
   card_name: z.string().min(1, "必填"),
@@ -193,15 +188,13 @@ export const skillCardSchema = z.object({
   usage_condition: nullableString,
   chain_priority: strictNumber,
   description_ui: z.string(),
-  note: nullableString,
-});
-
+  note: nullableString
+}).catchall(z.any());
 export const skillCardsFileSchema = z.object({
   _meta: baseMetaSchema,
   skill_cards: z.array(skillCardSchema),
-  env_effect_note: nullableString,
-});
-
+  env_effect_note: nullableString
+}).catchall(z.any());
 export const suddenEventOptionSchema = z.object({
   option_index: strictNumber,
   label: nullableString,
@@ -210,23 +203,20 @@ export const suddenEventOptionSchema = z.object({
   hp_delta: strictNumber,
   skip_turns: strictNumber,
   skip_scope: nullableString,
-  dice_effect: nullableString,
-});
-
+  dice_effect: nullableString
+}).catchall(z.any());
 export const suddenEventSchema = z.object({
   event_id: z.string().min(1, "必填"),
   event_name: z.string().min(1, "必填"),
   has_choice: z.boolean(),
   options: z.array(suddenEventOptionSchema),
-  note: nullableString,
-});
-
+  note: nullableString
+}).catchall(z.any());
 export const suddenEventsFileSchema = z.object({
   _meta: baseMetaSchema,
   sudden_events: z.array(suddenEventSchema),
-  env_effect_note: nullableString,
-});
-
+  env_effect_note: nullableString
+}).catchall(z.any());
 export const pendingDecisionSchema = z.object({
   id: strictNumber,
   status: z.enum(['OPEN', 'DECIDED', 'WONTFIX']),
@@ -234,13 +224,12 @@ export const pendingDecisionSchema = z.object({
   affects: z.array(z.string()),
   suggested_default: z.string(),
   decision: nullableString,
-  decided_by: nullableString,
-});
-
+  decided_by: nullableString
+}).catchall(z.any());
 export const pendingDecisionsFileSchema = z.object({
   _meta: baseMetaSchema,
-  decisions: z.array(pendingDecisionSchema),
-});
+  decisions: z.array(pendingDecisionSchema)
+}).catchall(z.any());
 
 // A master map to resolve schema by filename
 export const schemaMap: Record<string, any> = {
@@ -251,18 +240,15 @@ export const schemaMap: Record<string, any> = {
   'normal_events.json': normalEventsFileSchema,
   'skill_cards.json': skillCardsFileSchema,
   'sudden_events.json': suddenEventsFileSchema,
-  'pending_decisions.json': pendingDecisionsFileSchema,
+  'pending_decisions.json': pendingDecisionsFileSchema
 };
-
 export function getSchemaForFile(filename: string): any {
   return schemaMap[filename];
 }
-
 export function getSchemaForForm(filename: string, isItem: boolean): any {
   const fileSchema = schemaMap[filename];
   if (!fileSchema) return undefined;
   if (!isItem) return fileSchema;
-  
   if (fileSchema.shape) {
     for (const key in fileSchema.shape) {
       if (key !== '_meta' && fileSchema.shape[key] && typeof fileSchema.shape[key] === 'object' && fileSchema.shape[key]._def?.typeName === 'ZodArray') {
@@ -272,14 +258,11 @@ export function getSchemaForForm(filename: string, isItem: boolean): any {
   }
   return undefined;
 }
-
 export function getNumericKeysFromSchemaMap(map: Record<string, any>): Set<string> {
   const numericKeys = new Set<string>();
   const visited = new Set<any>();
-
   function traverse(schema: any, keyName?: string) {
     if (!schema || !schema._def) return;
-
     let current = schema;
     while (current && current._def) {
       const typeName = current._def.typeName;
@@ -291,18 +274,14 @@ export function getNumericKeysFromSchemaMap(map: Record<string, any>): Set<strin
         break;
       }
     }
-
     if (!current || !current._def) return;
-
     const typeName = current._def.typeName;
     if (typeName === 'ZodNumber') {
       if (keyName) numericKeys.add(keyName);
       return;
     }
-
     if (visited.has(current)) return;
     visited.add(current);
-
     if (typeName === 'ZodObject') {
       const shape = current.shape;
       for (const k in shape) {
@@ -314,22 +293,17 @@ export function getNumericKeysFromSchemaMap(map: Record<string, any>): Set<strin
       current._def.options?.forEach((opt: any) => traverse(opt, keyName));
     }
   }
-
   for (const k in map) {
     traverse(map[k]);
   }
   return numericKeys;
 }
-
 export const NUMERIC_KEYS = getNumericKeysFromSchemaMap(schemaMap);
-
 export function getPrimitiveArrayKeysFromSchemaMap(map: Record<string, any>): Set<string> {
   const primitiveKeys = new Set<string>();
   const visited = new Set<any>();
-
   function traverse(schema: any, keyName?: string) {
     if (!schema || !schema._def) return;
-
     let current = schema;
     while (current && current._def) {
       const typeName = current._def.typeName;
@@ -341,10 +315,8 @@ export function getPrimitiveArrayKeysFromSchemaMap(map: Record<string, any>): Se
         break;
       }
     }
-
     if (!current || !current._def) return;
     const typeName = current._def.typeName;
-
     if (typeName === 'ZodArray') {
       let elem = current.element;
       while (elem && elem._def) {
@@ -357,7 +329,6 @@ export function getPrimitiveArrayKeysFromSchemaMap(map: Record<string, any>): Se
           break;
         }
       }
-      
       if (elem && elem._def) {
         const elemTypeName = elem._def.typeName;
         if (elemTypeName === 'ZodString' || elemTypeName === 'ZodNumber' || elemTypeName === 'ZodBoolean') {
@@ -365,15 +336,12 @@ export function getPrimitiveArrayKeysFromSchemaMap(map: Record<string, any>): Se
           return;
         }
       }
-      
       if (visited.has(current)) return;
       visited.add(current);
-      
       traverse(current.element, keyName);
     } else if (typeName === 'ZodObject') {
       if (visited.has(current)) return;
       visited.add(current);
-
       const shape = current.shape;
       for (const k in shape) {
         traverse(shape[k], k);
@@ -381,16 +349,44 @@ export function getPrimitiveArrayKeysFromSchemaMap(map: Record<string, any>): Se
     } else if (typeName === 'ZodUnion') {
       if (visited.has(current)) return;
       visited.add(current);
-
       current._def.options?.forEach((opt: any) => traverse(opt, keyName));
     }
   }
-
   for (const k in map) {
     traverse(map[k]);
   }
   return primitiveKeys;
 }
-
 export const PRIMITIVE_ARRAY_KEYS = getPrimitiveArrayKeysFromSchemaMap(schemaMap);
 
+
+export function getDefaultItemForArray(filename?: string, arrayKey?: string): Record<string, any> | undefined {
+  // Nested arrays
+  if (arrayKey === 'options') {
+    return { option_id: null, description: null, event_type: null, trigger_event_id: null, cost: null, effect_id: null, pass_probability: null, success_effect_id: null, fail_effect_id: null };
+  }
+  if (arrayKey === 'ranks') {
+    return { name: null, exp_reward: null, aca_reward: null, effect_id: null };
+  }
+  
+  if (!filename || !arrayKey) return undefined;
+  if (filename === 'exam_events.json' && arrayKey === 'exams') {
+    return { exam_id: null, exam_name: null, exam_type: null, max_score: null, bid: null, olympiad: null, dutch_auction: null, qualifier: null, ranks: [] };
+  }
+  if (filename === 'event_sequence.json' && arrayKey === 'sequence') {
+    return { index: null, display_name: null, type: null, event_id: null, year: null, semester: null, is_fixed_sudden: null, note: null };
+  }
+  if (filename === 'goal_cards.json' && arrayKey === 'goal_cards') {
+    return { goal_id: null, goal_name: null, exam_score_ref: null, exp_threshold: null, aca_threshold: null, hp_floor: null, max_hp: null, lives: null, reveal_on_death: null, is_devil: null, devil_win_condition: null, note: null, devil_revival_note: null };
+  }
+  if (filename === 'normal_events.json' && arrayKey === 'normal_events') {
+    return { event_id: null, event_name: null, options: [] };
+  }
+  if (filename === 'sudden_events.json' && arrayKey === 'sudden_events') {
+    return { event_id: null, event_name: null, has_choice: null, note: null, options: [] };
+  }
+  if (filename === 'skill_cards.json' && arrayKey === 'skill_cards') {
+    return { card_id: null, card_name: null, timing: null, target_type: null, effect_type: null, effect_value: null, dice_type: null, count_in_deck: null, skip_scope: null, usage_condition: null, chain_priority: null, description_ui: null, note: null };
+  }
+  return undefined;
+}
