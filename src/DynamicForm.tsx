@@ -42,6 +42,8 @@ function getPolymorphicController(name: string, parentData: any, meta: any) {
   
   if (meta) {
     for (const key in meta) {
+      if (!Object.prototype.hasOwnProperty.call(meta, key)) continue;
+      
       if (key.endsWith('_enum') && Array.isArray(meta[key])) {
         if (meta[key].includes(name)) {
           const controllerKey = key.replace('_enum', '');
