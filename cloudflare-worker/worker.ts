@@ -19,7 +19,8 @@ const ALLOWED_FILES = [
   'deck_exam.json',
   'deck_lesson.json',
   'deck_rest.json',
-  'ending_conditions.json'
+  'ending_conditions.json',
+  'game_config.json'
 ];
 
 const CORS_HEADERS = {

@@ -81,13 +81,10 @@ export default function App() {
   const meta = activeFileContent?._meta;
   
   const mainArrayKey = React.useMemo(() => {
-    if (activeFile?.name === 'event_sequence.json') {
-      return null;
-    }
     return activeFileContent 
       ? Object.keys(activeFileContent).find(key => key !== '_meta' && Array.isArray(activeFileContent[key])) 
       : null;
-  }, [activeFileContent, activeFile?.name]);
+  }, [activeFileContent]);
 
   const handleSaveRoot = async (data: unknown) => {
     try {
