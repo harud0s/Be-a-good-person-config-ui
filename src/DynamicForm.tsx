@@ -84,6 +84,10 @@ const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: 
   if (typeof currentData === 'object' && currentData !== null) {
     const result: any = {};
     for (const k in currentData) {
+      // 防止原型污染與忽略繼承屬性
+      if (!Object.prototype.hasOwnProperty.call(currentData, k)) continue;
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+
       // 多型剔除機制: 如果此鍵是由 enum 控制的多型屬性，檢查當前類型是否匹配
       const controllerKey = getPolymorphicController(k, currentData, meta);
       if (controllerKey && currentData[controllerKey] !== k) {
@@ -408,6 +412,10 @@ function generateEmptyTemplate(obj: any): any {
   if (obj !== null && typeof obj === 'object') {
     const res: any = {};
     for (const key in obj) {
+      // 防止原型污染與忽略繼承屬性
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+
       if (key === 'id') {
         res[key] = null;
       } else {
