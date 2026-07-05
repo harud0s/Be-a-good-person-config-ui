@@ -37,6 +37,12 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/generator": "^8.0.0",
+    "@babel/parser": "^8.0.0",
+    "@babel/preset-typescript": "^8.0.1",
+    "@babel/traverse": "^8.0.0",
+    "@babel/types": "^8.0.0",
     "@tailwindcss/vite": "^4.3.2",
     "@types/jszip": "^3.4.0",
     "@types/node": "^24.13.2",
