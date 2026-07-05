@@ -246,20 +246,20 @@ export default function App() {
               <DropdownMenu.Content className="min-w-[200px] bg-popover text-popover-foreground rounded-md shadow-md p-1 z-50 border" sideOffset={5} align="end">
                 <DropdownMenu.Item 
                   className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
-                  onSelect={(e) => { setTimeout(() => handleAction('local'), 0); }}
+                  onSelect={() => { setTimeout(() => handleAction('local'), 0); }}
                 >
                   <FolderOpen className="w-4 h-4" /> 開啟資料夾 (Desktop)
                 </DropdownMenu.Item>
                 <DropdownMenu.Item 
                   className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
-                  onSelect={(e) => { setTimeout(() => handleAction('zip'), 0); }}
+                  onSelect={() => { setTimeout(() => handleAction('zip'), 0); }}
                 >
                   <FileArchive className="w-4 h-4" /> 開啟 ZIP (Mobile)
                 </DropdownMenu.Item>
                 <DropdownMenu.Separator className="h-px bg-border my-1" />
                 <DropdownMenu.Item 
                   className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
-                  onSelect={(e) => { setTimeout(() => handleAction('github'), 0); }}
+                  onSelect={() => { setTimeout(() => handleAction('github'), 0); }}
                 >
                   <Cloud className="w-4 h-4" /> 從 GitHub Repo 載入
                 </DropdownMenu.Item>
