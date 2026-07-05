@@ -84,7 +84,7 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
   
   const { register, handleSubmit, control, reset, setValue, getValues, formState: { isDirty, errors } } = useForm({
     defaultValues: data,
-    shouldUnregister: true, // Prevents zombie data in form state
+    shouldUnregister: false,
     resolver: schema ? zodResolver(schema as any) : undefined,
   });
 
