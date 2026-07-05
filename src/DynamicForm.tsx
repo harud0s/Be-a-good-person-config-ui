@@ -32,13 +32,30 @@ interface DynamicFormProps {
   onDirtyChange?: (isDirty: boolean) => void;
 }
 
-// 判斷是否為多型欄位
 function getPolymorphicController(name: string, parentData: any, meta: any) {
-  if (!parentData || !meta) return null;
-  const controllerKey = `${name}_type`;
-  if (controllerKey in parentData) {
-    return controllerKey;
+  if (!parentData) return null;
+  
+  // 1. 直覺名稱匹配 (例如欄位叫 action，控制鍵為 action_type)
+  const directController = `${name}_type`;
+  if (directController in parentData) {
+    return directController;
   }
+  
+  // 2. 解耦多型：透過 _meta enum 陣列反查 
+  // (例如 name="bid" -> 在 meta 找到 "exam_type_enum" 包含 "bid" -> 反推 controller="exam_type")
+  if (meta) {
+    for (const key in meta) {
+      if (key.endsWith('_enum') && Array.isArray(meta[key])) {
+        if (meta[key].includes(name)) {
+          const controllerKey = key.replace('_enum', '');
+          if (controllerKey in parentData) {
+            return controllerKey;
+          }
+        }
+      }
+    }
+  }
+  
   return null;
 }
 
