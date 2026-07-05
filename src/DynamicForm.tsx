@@ -35,20 +35,17 @@ interface DynamicFormProps {
 function getPolymorphicController(name: string, parentData: any, meta: any) {
   if (!parentData) return null;
   
-  // 1. 直覺名稱匹配 (例如欄位叫 action，控制鍵為 action_type)
   const directController = `${name}_type`;
-  if (directController in parentData) {
+  if (Object.prototype.hasOwnProperty.call(parentData, directController)) {
     return directController;
   }
   
-  // 2. 解耦多型：透過 _meta enum 陣列反查 
-  // (例如 name="bid" -> 在 meta 找到 "exam_type_enum" 包含 "bid" -> 反推 controller="exam_type")
   if (meta) {
     for (const key in meta) {
       if (key.endsWith('_enum') && Array.isArray(meta[key])) {
         if (meta[key].includes(name)) {
           const controllerKey = key.replace('_enum', '');
-          if (controllerKey in parentData) {
+          if (Object.prototype.hasOwnProperty.call(parentData, controllerKey)) {
             return controllerKey;
           }
         }
@@ -109,7 +106,10 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
   const { register, handleSubmit, control, reset, setValue, getValues, formState: { isDirty, errors } } = useForm({
     defaultValues: data,
     shouldUnregister: false,
-    resolver: schema ? zodResolver(schema as any) : undefined,
+    resolver: schema ? async (values, context, options) => {
+      const activeValues = sanitizeData(values, data, undefined, meta);
+      return zodResolver(schema as any)(activeValues, context, options);
+    } : undefined,
   });
 
   const [isTextMode, setIsTextMode] = React.useState(false);
@@ -252,7 +252,8 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
 
 function PolymorphicObjectWrapper(props: RecursiveFieldProps & { controllerKey: string }) {
   const { name, controllerKey, control, path, parentData } = props;
-  const controllerPath = path.replace(new RegExp(`${name}$`), controllerKey);
+  const lastDot = path.lastIndexOf('.');
+  const controllerPath = lastDot >= 0 ? `${path.slice(0, lastDot)}.${controllerKey}` : controllerKey;
   const currentTypeValue = useWatch({ control, name: controllerPath, defaultValue: parentData[controllerKey] });
   
   if (currentTypeValue !== name) return null;
