@@ -9,8 +9,12 @@ export interface Env {
 
 const ALLOWED_FILES = [
   'event_sequence.json',
-  'exam.json',
   'pending_decisions.json',
+  'normal_events.json',
+  'sudden_events.json',
+  'goal_cards.json',
+  'skill_cards.json',
+  'exam_events.json',
   'character_config.json',
   'deck_exam.json',
   'deck_lesson.json',

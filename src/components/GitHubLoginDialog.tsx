@@ -18,7 +18,7 @@ export function GitHubLoginDialog({ open, onOpenChange, onConnect }: GitHubLogin
     if (open) {
       let savedRepo = '';
       try {
-        savedRepo = localStorage.getItem('githubRepo') || '';
+        savedRepo = localStorage.getItem('githubRepo') || 'harud0s/Be-a-good-person-json-data';
       } catch (e) {
         console.warn('無法讀取 localStorage', e);
       }
