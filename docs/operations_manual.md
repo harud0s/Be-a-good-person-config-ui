@@ -29,9 +29,16 @@ Config UI 是一個純前端的 PWA (Progressive Web App)，使用 React (Vite) 
 2. 登入 Cloudflare: `wrangler login`
 3. 切換至 `cloudflare-worker` 目錄: `cd cloudflare-worker`
 4. 部署 Worker: `wrangler deploy`
-   - 部署成功後，Wrangler 會提供一組 URL (例如: `https://my-proxy.worker.dev`)。
-   - 將該 URL 複製到前端專案的 `.env.production` 內的 `VITE_WORKER_URL`。
-
+   - 部署成功後，Wrangler 會在終端機輸出提供一組 URL (例如: `https://my-proxy.worker.dev`)。
+   - **設定前端環境變數**：
+     1. 回到前端專案的根目錄 (與 `package.json` 同層級)。
+     2. 建立或編輯名為 `.env.production` 的檔案。
+     3. 在檔案中新增以下內容，將 URL 替換為剛剛 Wrangler 產生的 URL：
+        ```env
+        VITE_WORKER_URL=https://my-proxy.worker.dev
+        ```
+     4. (可選) 如果您在本機開發測試 (使用 `npm run dev`) 時也需要連線至 Cloudflare Worker，可以將相同內容也寫入 `.env.development` 檔案中。
+     5. 存檔後，Vercel 等前端部署平台在下次重新部署時就會自動套用這個網址，前端與中繼代理的連線便成功建立。
 ### 2.3 設定 Worker 密碼與 Token
 為了保護代理伺服器不被濫用，必須設定以下 Secret 環境變數：
 
