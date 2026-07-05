@@ -107,12 +107,12 @@ export const examEventSchema = z.object({
       hp_delta: numberOrString,
       exp_reward: strictNumber,
       note: nullableString
-    }),
+    }).catchall(z.any()),
     fail_effect: z.object({
       hp_delta: numberOrString,
       exp_reward: strictNumber,
       note: nullableString
-    }),
+    }).catchall(z.any()),
     devil_immunity: z.boolean()
   }).catchall(z.any()).optional()
 }).catchall(z.any());

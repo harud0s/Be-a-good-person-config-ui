@@ -35,29 +35,29 @@ interface DynamicFormProps {
 // 判斷是否為多型欄位
 function getPolymorphicController(name: string, parentData: any, meta: any) {
   if (!parentData || !meta) return null;
-  const parentTypeKeys = Object.keys(parentData).filter(k => k.endsWith('_type'));
-  for (const typeKey of parentTypeKeys) {
-    const enumKey = `${typeKey}_enum`;
-    if (meta[enumKey] && Array.isArray(meta[enumKey]) && meta[enumKey].includes(name)) {
-      return typeKey;
-    }
+  const controllerKey = `${name}_type`;
+  if (controllerKey in parentData) {
+    return controllerKey;
   }
   return null;
 }
 
 const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: any): any => {
-  if (currentData === null || currentData === undefined) return null;
-  if (currentData === '') return null;
+  if (currentData === null || currentData === undefined) {
+    if (currentData === undefined) return undefined;
+    return null;
+  }
   
   if (typeof currentData === 'string') {
     if ((key && NUMERIC_KEYS.has(key)) || typeof originalData === 'number') {
       const parsed = Number(currentData);
-      return isNaN(parsed) ? currentData : parsed;
+      return isNaN(parsed) ? (originalData !== undefined ? originalData : 0) : parsed;
     }
+    return currentData;
   }
 
   if (typeof currentData === 'number' && isNaN(currentData)) {
-    return null;
+    return originalData !== undefined ? originalData : 0;
   }
   
   if (Array.isArray(currentData)) {
@@ -72,7 +72,10 @@ const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: 
       if (controllerKey && currentData[controllerKey] !== k) {
         continue; // 丟棄非 active 的多型資料 (ghost objects)
       }
-      result[k] = sanitizeData(currentData[k], originalData?.[k], k, meta);
+      const sanitizedValue = sanitizeData(currentData[k], originalData?.[k], k, meta);
+      if (sanitizedValue !== undefined) {
+        result[k] = sanitizedValue;
+      }
     }
     return result;
   }
@@ -388,10 +391,17 @@ function generateEmptyTemplate(obj: any): any {
   if (obj !== null && typeof obj === 'object') {
     const res: any = {};
     for (const key in obj) {
-      res[key] = generateEmptyTemplate(obj[key]);
+      if (key === 'id') {
+        res[key] = null;
+      } else {
+        res[key] = generateEmptyTemplate(obj[key]);
+      }
     }
     return res;
   }
+  if (typeof obj === 'string') return '';
+  if (typeof obj === 'number') return 0;
+  if (typeof obj === 'boolean') return false;
   return null;
 }
 
