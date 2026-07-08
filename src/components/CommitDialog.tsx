@@ -12,30 +12,39 @@ interface CommitDialogProps {
 export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
   const [message, setMessage] = useState('');
   const [authorName, setAuthorName] = useState('');
+  const [repo, setRepo] = useState('');
+  const [password, setPassword] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
   
   const files = useEditorStore(state => state.files);
   const originalContents = useEditorStore(state => state.originalContents);
   const commitToGitHub = useEditorStore(state => state.commitToGitHub);
+  const githubRepo = useEditorStore(state => state.githubRepo);
 
-  const changedFiles = files.filter(f => f.contentString !== undefined && f.contentString !== originalContents[f.path]);
+  const isInitialPush = !githubRepo;
+  const changedFiles = files.filter(f => isInitialPush || (f.contentString !== undefined && f.contentString !== originalContents[f.path]));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message || !authorName) return;
+    if (isInitialPush && (!repo || !password)) return;
     
     setIsCommitting(true);
     try {
-      await commitToGitHub(message, authorName);
+      await commitToGitHub(message, authorName, repo, password);
       toast.success('Successfully committed to GitHub');
       onOpenChange(false);
       setMessage('');
+      setRepo('');
+      setPassword('');
     } catch (err: any) {
       toast.error(err.message || 'Commit failed');
     } finally {
       setIsCommitting(false);
     }
   };
+
+  const isSubmitDisabled = isCommitting || changedFiles.length === 0 || (isInitialPush && (!repo || !password));
 
   return (
     <Dialog.Root open={open} onOpenChange={(val) => { if (!isCommitting) onOpenChange(val); }}>
@@ -48,16 +57,18 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
         >
           <Dialog.Title className="text-xl font-bold mb-4 flex items-center gap-2">
             <GitCommit className="w-5 h-5" />
-            Commit Changes
+            {isInitialPush ? 'Initial Push to GitHub' : 'Commit Changes'}
           </Dialog.Title>
           <Dialog.Description className="text-muted-foreground mb-4 text-sm">
-            提交以下變更的檔案至 GitHub。
+            {isInitialPush ? '推送到全新的 GitHub Repo。請輸入 Repo 網址與團隊密碼。' : '提交以下變更的檔案至 GitHub。'}
           </Dialog.Description>
           
           <div className="flex-1 overflow-auto min-h-0 mb-4 border rounded bg-muted/50 p-3">
-            <h4 className="text-sm font-semibold mb-2">Changed Files ({changedFiles.length})</h4>
+            <h4 className="text-sm font-semibold mb-2">
+              {isInitialPush ? 'Files to Push' : 'Changed Files'} ({changedFiles.length})
+            </h4>
             {changedFiles.length === 0 ? (
-              <p className="text-sm text-muted-foreground">沒有偵測到任何變更</p>
+              <p className="text-sm text-muted-foreground">沒有偵測到任何檔案或變更</p>
             ) : (
               <ul className="text-sm space-y-1">
                 {changedFiles.map(f => (
@@ -70,6 +81,34 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4 shrink-0">
+            {isInitialPush && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Repo URL</label>
+                  <input
+                    type="text"
+                    value={repo}
+                    onChange={e => setRepo(e.target.value)}
+                    placeholder="e.g., https://github.com/user/repo"
+                    className="w-full border rounded px-3 py-2 bg-background"
+                    required
+                    disabled={isCommitting}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Team Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Enter team password"
+                    className="w-full border rounded px-3 py-2 bg-background"
+                    required
+                    disabled={isCommitting}
+                  />
+                </div>
+              </>
+            )}
             <div>
               <label className="block text-sm font-medium mb-1">Commit Message</label>
               <input
@@ -108,9 +147,9 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
               <button
                 type="submit"
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-                disabled={isCommitting || changedFiles.length === 0}
+                disabled={isSubmitDisabled}
               >
-                {isCommitting ? 'Committing...' : 'Commit'}
+                {isCommitting ? (isInitialPush ? 'Pushing...' : 'Committing...') : (isInitialPush ? 'Push' : 'Commit')}
               </button>
             </div>
           </form>

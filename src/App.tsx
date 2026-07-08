@@ -10,6 +10,8 @@ import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { GitHubLoginDialog } from './components/GitHubLoginDialog';
 import { CommitDialog } from './components/CommitDialog';
 import { HistoryDrawer } from './components/HistoryDrawer';
+import { getDefaultItemForArray, schemaMap } from './schemas';
+import { sanitizeData } from './DynamicForm';
 
 function FullTextEditor({ data, onSave, onChange }: { data: any, onSave: (d: any) => void, onChange: () => void }) {
   const [text, setText] = useState(JSON.stringify(data, null, 2));
@@ -49,7 +51,6 @@ export default function App() {
   
   const openDirectory = useEditorStore(state => state.openDirectory);
   const openFile = useEditorStore(state => state.openFile);
-  const saveFile = useEditorStore(state => state.saveFile);
   const updateActiveContent = useEditorStore(state => state.updateActiveContent);
   const setDirty = useEditorStore(state => state.setDirty);
   const initStore = useEditorStore(state => state.initStore);
@@ -59,6 +60,7 @@ export default function App() {
   const restoreSession = useEditorStore(state => state.restoreSession);
   const checkUnsavedChanges = useEditorStore(state => state.checkUnsavedChanges);
   const openGitHubMode = useEditorStore(state => state.openGitHubMode);
+  const saveAllDrafts = useEditorStore(state => state.saveAllDrafts);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
@@ -96,12 +98,23 @@ export default function App() {
       : null;
   }, [activeFileContent, activeFile?.name]);
 
-  const handleSaveRoot = async (data: unknown) => {
+  const handleSaveRoot = async (data: unknown): Promise<boolean> => {
     try {
-      updateActiveContent(data, false);
+      const schema = activeFile?.name ? schemaMap[activeFile.name] : null;
+      if (schema) {
+        const result = schema.safeParse(data);
+        if (!result.success) {
+           toast.error("驗證失敗: " + result.error.errors[0].message);
+           return false;
+        }
+      }
+      const sanitized = sanitizeData(data, activeFileContent, undefined, activeFileContent?._meta);
+      updateActiveContent(sanitized, false);
       toast.success(`已將 ${activeFile?.name} 的變更存入暫存`);
+      return true;
     } catch {
       toast.error('儲存失敗');
+      return false;
     }
   };
 
@@ -229,14 +242,43 @@ export default function App() {
           >
             See Diffs
           </button>
-          {workspaceMode === 'zip' && (
-            <button
-              onClick={handleExportZip}
-              className="flex items-center gap-2 bg-secondary text-secondary-foreground px-3 py-2 min-h-[44px] rounded-md text-sm font-medium hover:bg-secondary/80 transition-colors"
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">匯出 ZIP</span>
-            </button>
+          {files.length > 0 && (
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button className="flex items-center gap-2 bg-secondary text-secondary-foreground px-3 py-2 min-h-[44px] rounded-md text-sm font-medium hover:bg-secondary/80 transition-colors outline-none">
+                  匯出...
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="min-w-[160px] bg-popover text-popover-foreground rounded-md shadow-md p-1 z-50 border" sideOffset={5} align="end">
+                  <DropdownMenu.Item 
+                    className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
+                    onSelect={() => { setTimeout(() => handleExportZip(), 0); }}
+                  >
+                    <Download className="w-4 h-4" /> 匯出到本機 (.zip)
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item 
+                    className="flex items-center gap-2 px-2 py-2 text-sm rounded cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground"
+                    onSelect={async (e) => { 
+                      e.preventDefault();
+                      if (isDirty) {
+                        toast.error('您有尚未「儲存修改」的表單內容，請先儲存再匯出到線上！');
+                        return;
+                      }
+                      try {
+                        await saveAllDrafts();
+                        setIsCommitDialogOpen(true); 
+                      } catch (err: any) {
+                        toast.error(err.message || '儲存草稿失敗');
+                      }
+                    }}
+                  >
+                    <Cloud className="w-4 h-4" /> 匯出到線上 (GitHub)
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           )}
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
@@ -428,17 +470,10 @@ export default function App() {
                     className="border border-dashed rounded-lg p-4 flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer min-h-[44px] transition-colors"
                     onClick={() => {
                       if (isDirty && !window.confirm("有未儲存的變更，執行此動作將遺失變更。確定繼續？")) return;
-                      // Determine default empty object
-                      const template = activeFileContent[mainArrayKey][0] || {};
-                      const newItem = Object.keys(template).reduce((acc, key) => ({ ...acc, [key]: null }), {});
-                      
-                      const newArray = [...activeFileContent[mainArrayKey], newItem];
-                      saveFile({ ...activeFileContent, [mainArrayKey]: newArray }).then(() => {
-                        setIsEditingMeta(false);
-                        setIsEditingFullText(false);
-                        setDirty(false);
-                        setEditingItemIndex(newArray.length - 1);
-                      });
+                      setIsEditingMeta(false);
+                      setIsEditingFullText(false);
+                      setEditingItemIndex(activeFileContent[mainArrayKey].length);
+                      setDirty(false); // clear dirty state for new edit
                     }}
                   >
                     + 新增項目
@@ -488,11 +523,12 @@ export default function App() {
                 <FullTextEditor 
                   key={`full-${activeFile?.name}`}
                   data={activeFileContent}
-                  onSave={(parsed) => {
-                    updateActiveContent(parsed, false);
-                    setIsEditingFullText(false);
-                    setDirty(false);
-                    toast.success("純文字變更已存入暫存");
+                  onSave={async (parsed) => {
+                    const success = await handleSaveRoot(parsed);
+                    if (success) {
+                      setIsEditingFullText(false);
+                      setDirty(false);
+                    }
                   }}
                   onChange={() => setDirty(true)}
                 />
@@ -517,7 +553,7 @@ export default function App() {
                   key={`${activeFile?.name}-${editingItemIndex}`}
                   filename={activeFile?.name}
                   isItem={true}
-                  data={activeFileContent[mainArrayKey!][editingItemIndex!]} 
+                  data={activeFileContent[mainArrayKey!][editingItemIndex!] !== undefined ? activeFileContent[mainArrayKey!][editingItemIndex!] : (getDefaultItemForArray(activeFile?.name, mainArrayKey!) || {})} 
                   meta={meta} 
                   onSave={handleSaveItem} 
                   onDirtyChange={handleDirtyChange}

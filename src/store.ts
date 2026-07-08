@@ -34,7 +34,7 @@ interface EditorState {
   importZip: (file: File) => Promise<void>;
   exportZip: () => Promise<void>;
   openGitHubMode: (repo: string, password: string) => Promise<void>;
-  commitToGitHub: (message: string, authorName: string) => Promise<any>;
+  commitToGitHub: (message: string, authorName: string, repoOverride?: string, pwdOverride?: string) => Promise<any>;
   getGitHubHistory: (path: string) => Promise<any>;
 
   openFile: (fileEntry: FileEntry) => Promise<void>;
@@ -160,15 +160,18 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   },
 
   checkUnsavedChanges: () => {
-    const { drafts, workspaceMode, files, originalContents, isDirty } = getStore();
+    const { isDirty, workspaceMode, files, originalContents, drafts } = getStore();
     if (isDirty) return true;
+    
+    // Any drafts that haven't been saved back to files array
     if (Object.keys(drafts).length > 0) return true;
     
-    if (workspaceMode === 'github') {
+    // In both github and zip modes, we consider changes in memory that haven't been committed/exported
+    // as unsaved changes if the user tries to switch projects.
+    if (workspaceMode === 'github' || workspaceMode === 'zip') {
       const hasUncommitted = files.some(f => f.contentString !== undefined && f.contentString !== originalContents[f.path]);
       if (hasUncommitted) return true;
     }
-    
     return false;
   },
 
@@ -178,6 +181,7 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
       await setIDB('directoryHandle', dirHandle);
 
       const loadedFiles = await loadFilesFromDirectory(dirHandle);
+
       const newOriginalContents: Record<string, string> = {};
       loadedFiles.forEach(f => {
         if (f.originalContent) {
@@ -263,13 +267,14 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
   },
 
   exportZip: async () => {
-    const { files, workspaceMode } = getStore();
-    if (workspaceMode !== 'zip' && files.length === 0) throw new Error("No files to export in ZIP mode");
+    const { files, originalContents } = getStore();
+    if (files.length === 0) throw new Error("No files to export");
 
     const zip = new JSZip();
     for (const file of files) {
-      if (file.contentString) {
-        zip.file(file.path, file.contentString);
+      const content = file.contentString ?? originalContents[file.path];
+      if (content !== undefined) {
+        zip.file(file.path, content);
       }
     }
 
@@ -351,16 +356,22 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
     }
   },
 
-  commitToGitHub: async (message: string, authorName: string) => {
-    const { githubRepo, githubPassword, files, originalContents } = getStore();
-    if (!githubRepo || !githubPassword) throw new Error('Not in GitHub mode or missing credentials');
+  commitToGitHub: async (message: string, authorName: string, repoOverride?: string, pwdOverride?: string) => {
+    const state = getStore();
+    const repo = repoOverride || state.githubRepo;
+    const pwd = pwdOverride || state.githubPassword;
+    const { files, originalContents } = state;
+    if (!repo || !pwd) throw new Error('Not in GitHub mode or missing credentials');
+
+    const isInitialPush = !state.githubRepo; // If no repo bound yet, it's an initial push
 
     const changes = files
-      .filter(f => f.contentString !== undefined && f.contentString !== originalContents[f.path])
+      .filter(f => isInitialPush || (f.contentString !== undefined && f.contentString !== originalContents[f.path]))
       .map(f => ({
         fileName: f.path,
-        content: f.contentString
-      }));
+        content: f.contentString ?? originalContents[f.path]
+      }))
+      .filter(f => f.content !== undefined);
 
     if (changes.length === 0) {
       throw new Error('No changes to commit');
@@ -375,8 +386,8 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          repo: githubRepo,
-          password: githubPassword,
+          repo: repo,
+          password: pwd,
           changes,
           commitMessage: message,
           authorName
@@ -397,6 +408,10 @@ export const useEditorStore = create<EditorState>((set, getStore) => ({
 
     const data = await res.json();
     if (data.error) throw new Error(data.error);
+
+    if (!state.githubRepo) {
+      set({ githubRepo: repo, githubPassword: pwd });
+    }
 
     // Update the local SHAs and originalContents
     const updatedFilesData: { fileName: string; sha: string }[] = data.updatedFiles;

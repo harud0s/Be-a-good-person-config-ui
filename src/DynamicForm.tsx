@@ -58,7 +58,7 @@ function getPolymorphicController(name: string, parentData: any, meta: any) {
   return null;
 }
 
-const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: any): any => {
+export const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: any): any => {
   if (currentData === null || currentData === undefined) {
     if (currentData === undefined) return undefined;
     return null;
@@ -67,7 +67,7 @@ const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: 
   if (typeof currentData === 'string') {
     if ((key && NUMERIC_KEYS.has(key)) || typeof originalData === 'number') {
       const parsed = Number(currentData);
-      return isNaN(parsed) ? (originalData !== undefined ? originalData : 0) : parsed;
+      return isNaN(parsed) ? currentData : parsed;
     }
     return currentData;
   }
@@ -145,12 +145,7 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
   };
 
   const onInvalid = () => {
-    // Soft validation: prompt user if they want to force save
-    if (window.confirm("表單存在驗證錯誤（標示紅字處），強制儲存可能會導致格式異常或資料遺失。確定要強制儲存嗎？")) {
-      const rawData = getValues();
-      const sanitized = sanitizeData(rawData, data, undefined, meta);
-      onSave(sanitized);
-    }
+    toast.error("表單存在驗證錯誤（標示紅字處），請修正後再儲存。");
   };
 
   const handleSaveTextMode = () => {
@@ -159,12 +154,12 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
       if (schema) {
         const result = schema.safeParse(parsed);
         if (!result.success) {
-          if (!window.confirm("JSON 格式符合，但有內容驗證錯誤。確定要強制儲存嗎？")) {
-             return;
-          }
+           toast.error("JSON 格式符合，但有內容驗證錯誤: " + result.error.errors[0].message);
+           return;
         }
       }
-      onSave(parsed);
+      const sanitized = sanitizeData(parsed, data, undefined, meta);
+      onSave(sanitized);
     } catch (e) {
       toast.error("JSON 格式錯誤，無法儲存");
     }

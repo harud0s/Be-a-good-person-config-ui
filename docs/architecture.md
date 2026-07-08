@@ -26,7 +26,16 @@
     1.  `!Object.prototype.hasOwnProperty.call(obj, key)`：忽略繼承自原型鏈的屬性。
     2.  黑名單過濾：阻擋 `__proto__`, `constructor`, `prototype` 等特殊鍵值，避免惡意負載竄改 JavaScript 原生行為。
 
-## 3. PWA 與跨平台支援
+## 3. 匯出與狀態同步安全 (Export & State Sync Security)
+
+*   **草稿防護與自動同步 (Draft Safeguards)**: 
+    進行「匯出到本機 (.zip)」或「匯出到線上 (GitHub)」操作時，系統會自動呼叫 `saveAllDrafts()` 將背後的記憶體草稿寫回檔案狀態，防止背景編輯意外丟失。
+*   **阻斷狀態異步 (State Desync Prevention)**: 
+    「新增項目」按鈕不再直接建立空的髒草稿 (`drafts`)，而是向 `DynamicForm` 傳入虛擬索引 (Virtual Index)。只有在使用者點擊「儲存修改」且通過 Zod 驗證後，才會寫入 Store。這根除了中途取消新增卻殘留髒資料的漏洞。
+*   **全域編輯器與純文字模式驗證防護 (Text-Mode Validation)**: 
+    所有繞過 UI 直接編輯 JSON 的純文字模式（單一項目或全域編輯器），皆強制掛載 `schemaMap.safeParse()` 驗證機制與 `sanitizeData` 過濾器。這防堵了「Soft Validation Bypass」與透過複製貼上造成的「多型幽靈物件 (Ghost Objects)」滲入。
+
+## 4. PWA 與跨平台支援
 
 *   **Vite PWA**: 專案已整合 `vite-plugin-pwa`，支援 Service Worker 與清單 (Manifest) 生成，可安裝於 iOS / Android 桌面。
-*   **離線體驗**: 核心業務邏輯皆在前端運行，未連線 GitHub 時亦可透過本地 IndexedDB 草稿系統繼續工作，或使用 ZIP 匯入匯出。
+*   **離線體驗與無縫匯出**: 核心業務邏輯皆在前端運行，未連線 GitHub 時亦可透過本地 IndexedDB 草稿系統繼續工作，並且能在開啟專案後自由切換匯出成 ZIP 備份或線上 Commit 回 GitHub。
