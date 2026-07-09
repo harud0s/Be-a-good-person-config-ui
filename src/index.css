@@ -76,7 +76,8 @@
   * {
     @apply border-border;
   }
-  body {
+  html, body {
     @apply bg-background text-foreground;
+    overscroll-behavior-y: none;
   }
 }

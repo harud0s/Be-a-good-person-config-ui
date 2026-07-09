@@ -3,18 +3,19 @@ import { useForm, useWatch, useFieldArray } from 'react-hook-form';
 import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form';
 import { ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { getSchemaForForm, NUMERIC_KEYS, PRIMITIVE_ARRAY_KEYS, baseMetaSchema } from './schemas';
+import { getSchemaForForm, NUMERIC_KEYS, PRIMITIVE_ARRAY_KEYS, baseMetaSchema, getDefaultItemForArray } from './schemas';
+import { useEditorStore } from './store';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableArrayItem } from './components/SortableArrayItem';
 import { toast } from 'sonner';
 
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(({ className, ...props }, ref) => (
-  <input className={["flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50", className].filter(Boolean).join(" ")} ref={ref} {...props} />
+  <input className={["flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm ring-offset-background file:border-0 file:bg-transparent file:text-base file:md:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50", className].filter(Boolean).join(" ")} ref={ref} {...props} />
 ));
 
 const Button = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(({ className, ...props }, ref) => (
-  <button className={["inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2", className].filter(Boolean).join(" ")} ref={ref} {...props} />
+  <button className={["inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 min-h-[44px] px-4 py-2", className].filter(Boolean).join(" ")} ref={ref} {...props} />
 ));
 
 const Label = React.forwardRef<HTMLLabelElement, React.LabelHTMLAttributes<HTMLLabelElement>>(({ className, ...props }, ref) => (
@@ -31,28 +32,48 @@ interface DynamicFormProps {
   onDirtyChange?: (isDirty: boolean) => void;
 }
 
-// 判斷是否為多型欄位
 function getPolymorphicController(name: string, parentData: any, meta: any) {
-  if (!parentData || !meta) return null;
-  const parentTypeKeys = Object.keys(parentData).filter(k => k.endsWith('_type'));
-  for (const typeKey of parentTypeKeys) {
-    const enumKey = `${typeKey}_enum`;
-    if (meta[enumKey] && Array.isArray(meta[enumKey]) && meta[enumKey].includes(name)) {
-      return typeKey;
+  if (!parentData) return null;
+  
+  const directController = `${name}_type`;
+  if (Object.prototype.hasOwnProperty.call(parentData, directController)) {
+    return directController;
+  }
+  
+  if (meta) {
+    for (const key in meta) {
+      if (!Object.prototype.hasOwnProperty.call(meta, key)) continue;
+      
+      if (key.endsWith('_enum') && Array.isArray(meta[key])) {
+        if (meta[key].includes(name)) {
+          const controllerKey = key.replace('_enum', '');
+          if (Object.prototype.hasOwnProperty.call(parentData, controllerKey)) {
+            return controllerKey;
+          }
+        }
+      }
     }
   }
+  
   return null;
 }
 
-const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: any): any => {
-  if (currentData === null || currentData === undefined) return null;
-  if (currentData === '') return null;
+export const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: any): any => {
+  if (currentData === null || currentData === undefined) {
+    if (currentData === undefined) return undefined;
+    return null;
+  }
   
   if (typeof currentData === 'string') {
     if ((key && NUMERIC_KEYS.has(key)) || typeof originalData === 'number') {
       const parsed = Number(currentData);
       return isNaN(parsed) ? currentData : parsed;
     }
+    return currentData;
+  }
+
+  if (typeof currentData === 'number' && isNaN(currentData)) {
+    return originalData !== undefined ? originalData : 0;
   }
   
   if (Array.isArray(currentData)) {
@@ -62,12 +83,19 @@ const sanitizeData = (currentData: any, originalData: any, key?: string, meta?: 
   if (typeof currentData === 'object' && currentData !== null) {
     const result: any = {};
     for (const k in currentData) {
+      // 防止原型污染與忽略繼承屬性
+      if (!Object.prototype.hasOwnProperty.call(currentData, k)) continue;
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+
       // 多型剔除機制: 如果此鍵是由 enum 控制的多型屬性，檢查當前類型是否匹配
       const controllerKey = getPolymorphicController(k, currentData, meta);
       if (controllerKey && currentData[controllerKey] !== k) {
         continue; // 丟棄非 active 的多型資料 (ghost objects)
       }
-      result[k] = sanitizeData(currentData[k], originalData?.[k], k, meta);
+      const sanitizedValue = sanitizeData(currentData[k], originalData?.[k], k, meta);
+      if (sanitizedValue !== undefined) {
+        result[k] = sanitizedValue;
+      }
     }
     return result;
   }
@@ -79,8 +107,11 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
   
   const { register, handleSubmit, control, reset, setValue, getValues, formState: { isDirty, errors } } = useForm({
     defaultValues: data,
-    shouldUnregister: true, // Prevents zombie data in form state
-    resolver: schema ? zodResolver(schema as any) : undefined,
+    shouldUnregister: false,
+    resolver: schema ? async (values, context, options) => {
+      const activeValues = sanitizeData(values, data, undefined, meta);
+      return zodResolver(schema as any)(activeValues, context, options);
+    } : undefined,
   });
 
   const [isTextMode, setIsTextMode] = React.useState(false);
@@ -114,12 +145,7 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
   };
 
   const onInvalid = () => {
-    // Soft validation: prompt user if they want to force save
-    if (window.confirm("表單存在驗證錯誤（標示紅字處），強制儲存可能會導致格式異常或資料遺失。確定要強制儲存嗎？")) {
-      const rawData = getValues();
-      const sanitized = sanitizeData(rawData, data, undefined, meta);
-      onSave(sanitized);
-    }
+    toast.error("表單存在驗證錯誤（標示紅字處），請修正後再儲存。");
   };
 
   const handleSaveTextMode = () => {
@@ -128,12 +154,12 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
       if (schema) {
         const result = schema.safeParse(parsed);
         if (!result.success) {
-          if (!window.confirm("JSON 格式符合，但有內容驗證錯誤。確定要強制儲存嗎？")) {
-             return;
-          }
+           toast.error("JSON 格式符合，但有內容驗證錯誤: " + result.error.errors[0].message);
+           return;
         }
       }
-      onSave(parsed);
+      const sanitized = sanitizeData(parsed, data, undefined, meta);
+      onSave(sanitized);
     } catch (e) {
       toast.error("JSON 格式錯誤，無法儲存");
     }
@@ -166,7 +192,7 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
       {isTextMode ? (
         <div className="space-y-4">
           <textarea
-            className="w-full h-[60vh] font-mono text-sm p-4 border rounded-md bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full h-[60vh] font-mono text-base md:text-sm p-4 border rounded-md bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={textValue}
             onChange={(e) => {
               setTextValue(e.target.value);
@@ -223,7 +249,8 @@ export default function DynamicForm({ filename, isItem, isMeta, data, meta, onSa
 
 function PolymorphicObjectWrapper(props: RecursiveFieldProps & { controllerKey: string }) {
   const { name, controllerKey, control, path, parentData } = props;
-  const controllerPath = path.replace(new RegExp(`${name}$`), controllerKey);
+  const lastDot = path.lastIndexOf('.');
+  const controllerPath = lastDot >= 0 ? `${path.slice(0, lastDot)}.${controllerKey}` : controllerKey;
   const currentTypeValue = useWatch({ control, name: controllerPath, defaultValue: parentData[controllerKey] });
   
   if (currentTypeValue !== name) return null;
@@ -283,7 +310,7 @@ function RecursiveField(props: RecursiveFieldProps) {
         <Label className={errorMessage ? "text-destructive" : ""}>{name}</Label>
         <select
           {...register(path)}
-          className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${errorMessage ? 'border-destructive focus-visible:ring-destructive' : 'border-input'}`}
+          className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-base md:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${errorMessage ? 'border-destructive focus-visible:ring-destructive' : 'border-input'}`}
         >
           {enumValues.map((opt) => (
             <option key={String(opt)} value={opt || ""}>
@@ -300,10 +327,10 @@ function RecursiveField(props: RecursiveFieldProps) {
   if (typeof value === 'boolean') {
     return (
       <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2">
+        <label htmlFor={path} className="flex items-center gap-3 cursor-pointer min-h-[44px] p-2 -ml-2 rounded-md hover:bg-muted/50">
           <input type="checkbox" {...register(path)} id={path} className="h-4 w-4 accent-primary" />
-          <Label htmlFor={path} className={errorMessage ? "text-destructive" : ""}>{name}</Label>
-        </div>
+          <span className={errorMessage ? "text-destructive text-sm font-medium" : "text-sm font-medium"}>{name}</span>
+        </label>
         {errorMessage && <span className="text-xs text-destructive font-medium">{errorMessage}</span>}
       </div>
     );
@@ -324,14 +351,20 @@ function RecursiveField(props: RecursiveFieldProps) {
 }
 
 function ObjectField(props: RecursiveFieldProps) {
-  const { name, value, meta, path } = props;
+  const { name, value, meta, path, register } = props;
   // value might be undefined if it's a new array item
   const safeValue = value || {};
+  const keys = Object.keys(safeValue);
+  
+  const hasDeltas = ['exp_delta', 'aca_delta', 'hp_delta'].some(k => keys.includes(k));
+  const normalKeys = hasDeltas ? keys.filter(k => k !== 'exp_delta' && k !== 'aca_delta' && k !== 'hp_delta') : keys;
+
   return (
     <div className="p-4 border rounded-md space-y-4 bg-muted/20">
-      <h4 className="font-semibold text-lg capitalize">{name}</h4>
+      {isNaN(Number(name)) && <h4 className="font-semibold text-lg capitalize">{name}</h4>}
       {meta?.[`${name}_note`] && <p className="text-xs text-muted-foreground">{meta[`${name}_note`]}</p>}
-      {Object.keys(safeValue).map((subKey) => (
+      
+      {normalKeys.map((subKey) => (
         <RecursiveField
           {...props}
           key={subKey}
@@ -341,11 +374,63 @@ function ObjectField(props: RecursiveFieldProps) {
           parentData={safeValue}
         />
       ))}
+
+      {hasDeltas && (
+        <div className="mt-4 border rounded-md overflow-hidden bg-background">
+          <table className="w-full text-sm text-center border-collapse">
+            <thead className="bg-muted text-muted-foreground">
+              <tr>
+                <th className="p-2 border-b border-r font-medium">exp_delta</th>
+                <th className="p-2 border-b border-r font-medium">aca_delta</th>
+                <th className="p-2 border-b font-medium">hp_delta</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="p-2 border-r">
+                  <Input type="number" className="h-8 text-center" {...register(`${path}.exp_delta`, { valueAsNumber: true })} />
+                </td>
+                <td className="p-2 border-r">
+                  <Input type="number" className="h-8 text-center" {...register(`${path}.aca_delta`, { valueAsNumber: true })} />
+                </td>
+                <td className="p-2">
+                  <Input type="number" className="h-8 text-center" {...register(`${path}.hp_delta`, { valueAsNumber: true })} />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
+function generateEmptyTemplate(obj: any): any {
+  if (Array.isArray(obj)) return [];
+  if (obj !== null && typeof obj === 'object') {
+    const res: any = {};
+    for (const key in obj) {
+      // 防止原型污染與忽略繼承屬性
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+
+      if (key === 'id') {
+        res[key] = null;
+      } else {
+        res[key] = generateEmptyTemplate(obj[key]);
+      }
+    }
+    return res;
+  }
+  if (typeof obj === 'string') return '';
+  if (typeof obj === 'number') return 0;
+  if (typeof obj === 'boolean') return false;
+  return null;
+}
+
 function ArrayField(props: RecursiveFieldProps) {
+  const activeFile = useEditorStore(state => state.activeFile);
+  const filename = activeFile?.name;
   const { name, value, control, path, setValue } = props;
   
   // For arrays of primitives, we fall back to a controlled map because useFieldArray only supports objects
@@ -372,7 +457,7 @@ function ArrayField(props: RecursiveFieldProps) {
             <div className="flex items-center gap-1 shrink-0">
               <Button
                  type="button"
-                 className="h-10 w-10 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                 className="h-10 w-10 md:h-8 md:w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
                  onClick={() => { 
                    if (index > 0) {
                      const newArr = [...currentArray];
@@ -386,7 +471,7 @@ function ArrayField(props: RecursiveFieldProps) {
               </Button>
               <Button
                  type="button"
-                 className="h-10 w-10 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                 className="h-10 w-10 md:h-8 md:w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
                  onClick={() => { 
                    if (index < currentArray.length - 1) {
                      const newArr = [...currentArray];
@@ -398,7 +483,7 @@ function ArrayField(props: RecursiveFieldProps) {
               >
                 <ArrowDown className="h-4 w-4" />
               </Button>
-              <Button type="button" className="h-10 px-4 bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-1" onClick={() => {
+              <Button type="button" className="h-10 px-3 text-sm md:h-6 md:px-2 md:text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-1" onClick={() => {
                  const newArr = [...currentArray];
                  newArr.splice(index, 1);
                  setValue(path, newArr, { shouldDirty: true });
@@ -568,8 +653,14 @@ function ArrayField(props: RecursiveFieldProps) {
         type="button" 
         className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-input h-10 shadow-sm"
         onClick={() => {
-          const template = value[0] || {};
-          const newItem = Object.keys(template).reduce((acc, k) => ({ ...acc, [k]: null }), {});
+          let newItem;
+          const defaultItem = getDefaultItemForArray(filename, name);
+          if (defaultItem) {
+            newItem = JSON.parse(JSON.stringify(defaultItem));
+          } else {
+            const template = value[0] || {};
+            newItem = generateEmptyTemplate(template);
+          }
           append(newItem);
         }}
       >
@@ -581,14 +672,24 @@ function ArrayField(props: RecursiveFieldProps) {
 
 function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLength, props, control, hideArrows }: any) {
   const [isOpen, setIsOpen] = React.useState(false);
-  const [label, rank, status, question] = useWatch({ 
+  const [label, rank, status, question, display_name, event_name, event_id] = useWatch({ 
     control, 
-    name: [`${path}.${index}.label`, `${path}.${index}.rank`, `${path}.${index}.status`, `${path}.${index}.question`] 
+    name: [
+      `${path}.${index}.label`, 
+      `${path}.${index}.rank`, 
+      `${path}.${index}.status`, 
+      `${path}.${index}.question`,
+      `${path}.${index}.display_name`,
+      `${path}.${index}.event_name`,
+      `${path}.${index}.event_id`
+    ] 
   });
   
   // Header Preview Logic
   let previewTitle = `Item ${index + 1}`;
-  if (label !== undefined && label !== null && label !== "") {
+  if (display_name || event_name) {
+    previewTitle = display_name || event_name;
+  } else if (label !== undefined && label !== null && label !== "") {
     previewTitle = `選項: ${label}`;
   } else if (rank !== undefined && rank !== null && rank !== "") {
     previewTitle = `名次: ${rank}`;
@@ -605,13 +706,16 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
          className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
          onClick={() => setIsOpen(!isOpen)}
        >
-         <h5 className="font-medium text-sm text-card-foreground line-clamp-1 flex-1 pr-2">{previewTitle}</h5>
+         <div className="flex flex-col flex-1 pr-2 overflow-hidden">
+           <h5 className="font-medium text-sm text-card-foreground truncate">{previewTitle}</h5>
+           {event_id && <span className="text-xs text-muted-foreground font-mono mt-0.5 truncate">{event_id}</span>}
+         </div>
          <div className="flex items-center gap-1 shrink-0">
             {!hideArrows && (
               <>
                 <Button
                    type="button"
-                   className="h-8 w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                   className="h-10 w-10 md:h-8 md:w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
                    onClick={(e) => { e.stopPropagation(); if (index > 0) move(index, index - 1); }}
                    disabled={index === 0}
                 >
@@ -619,7 +723,7 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
                 </Button>
                 <Button
                    type="button"
-                   className="h-8 w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
+                   className="h-10 w-10 md:h-8 md:w-8 p-0 text-muted-foreground bg-transparent hover:bg-muted"
                    onClick={(e) => { e.stopPropagation(); if (index < totalLength - 1) move(index, index + 1); }}
                    disabled={index === totalLength - 1}
                 >
@@ -629,7 +733,7 @@ function CollapsibleArrayItem({ index, field, value, path, remove, move, totalLe
             )}
             <Button 
               type="button" 
-              className="h-6 px-2 text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-2"
+              className="h-10 px-3 text-sm md:h-6 md:px-2 md:text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90 ml-2"
               onClick={(e) => { e.stopPropagation(); remove(index); }}
             >
               移除
